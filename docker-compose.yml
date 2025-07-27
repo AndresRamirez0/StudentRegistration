@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  # API de Student Registration
+  api:
+    build: .
+    ports:
+      - "5149:80"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:80
+      - ConnectionStrings__Default=Server=mysql;Port=3306;Database=student_db;Uid=root;Pwd=StudentDB123!;AllowPublicKeyRetrieval=true;SslMode=None;
+    depends_on:
+      - mysql
+    networks:
+      - student-network
+    restart: unless-stopped
+
+  # Base de datos MySQL
+  mysql:
+    image: mysql:8.0
+    ports:
+      - "3307:3306"  # Puerto externo 3307
+    environment:
+      MYSQL_ROOT_PASSWORD: StudentDB123!
+      MYSQL_DATABASE: student_db
+      MYSQL_CHARACTER_SET_SERVER: utf8mb4
+      MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - student-network
+    restart: unless-stopped
+
+  # Adminer (Interfaz web para MySQL)
+  adminer:
+    image: adminer:latest
+    ports:
+      - "8080:8080"
+    networks:
+      - student-network
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+
+networks:
+  student-network:
+    driver: bridge

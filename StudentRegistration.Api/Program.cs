@@ -79,14 +79,16 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// Obtener logger una sola vez al inicio
+var appLogger = app.Services.GetRequiredService<ILogger<Program>>();
+
 // Configuración de base de datos con manejo robusto de errores
 try
 {
     using var scope = app.Services.CreateScope();
     var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     
-    logger.LogInformation("🚀 Iniciando configuración de base de datos...");
+    appLogger.LogInformation("🚀 Iniciando configuración de base de datos...");
     
     // Intentar conectar con timeout más corto para Railway
     var retryCount = 0;
@@ -96,29 +98,29 @@ try
     {
         try
         {
-            logger.LogInformation("📡 Intento {RetryCount}/{MaxRetries} conectando a base de datos", retryCount + 1, maxRetries);
+            appLogger.LogInformation("📡 Intento {RetryCount}/{MaxRetries} conectando a base de datos", retryCount + 1, maxRetries);
             
             await context.Database.EnsureCreatedAsync();
             
             // Solo crear datos semilla si no existen
             if (!await context.Professors.AnyAsync())
             {
-                logger.LogInformation("🌱 Creando datos semilla...");
+                appLogger.LogInformation("🌱 Creando datos semilla...");
                 await context.SaveChangesAsync();
             }
             
-            logger.LogInformation("✅ Base de datos configurada correctamente");
+            appLogger.LogInformation("✅ Base de datos configurada correctamente");
             break;
         }
         catch (Exception ex)
         {
             retryCount++;
-            logger.LogWarning("⚠️ Error conectando a BD (intento {RetryCount}/{MaxRetries}): {Message}", 
+            appLogger.LogWarning("⚠️ Error conectando a BD (intento {RetryCount}/{MaxRetries}): {Message}", 
                 retryCount, maxRetries, ex.Message);
             
             if (retryCount >= maxRetries)
             {
-                logger.LogError("❌ No se pudo conectar a la base de datos. Continuando sin BD...");
+                appLogger.LogError("❌ No se pudo conectar a la base de datos. Continuando sin BD...");
                 // No lanzar excepción para que la app inicie sin BD
                 break;
             }
@@ -129,8 +131,7 @@ try
 }
 catch (Exception ex)
 {
-    var logger = app.Services.GetRequiredService<ILogger<Program>>();
-    logger.LogError(ex, "❌ Error crítico en configuración de BD. La app continuará sin base de datos.");
+    appLogger.LogError(ex, "❌ Error crítico en configuración de BD. La app continuará sin base de datos.");
 }
 
 // Pipeline HTTP
@@ -188,8 +189,7 @@ app.MapGet("/info", () => Results.Ok(new {
     }
 }));
 
-var logger = app.Services.GetRequiredService<ILogger<Program>>();
-logger.LogInformation("🚀 Iniciando aplicación en puerto {Port}", port);
+appLogger.LogInformation("🚀 Iniciando aplicación en puerto {Port}", port);
 
 app.Run();
 

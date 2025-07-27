@@ -5,11 +5,13 @@ services:
   api:
     build: .
     ports:
-      - "5149:80"
+      - "${PORT:-8080}:8080"
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
-      - ASPNETCORE_URLS=http://+:80
-      - ConnectionStrings__Default=Server=mysql;Port=3306;Database=student_db;Uid=root;Pwd=StudentDB123!;AllowPublicKeyRetrieval=true;SslMode=None;
+      - ASPNETCORE_URLS=http://+:8080
+      - PORT=8080
+      - ENABLE_SWAGGER=true
+      - ConnectionStrings__Default=${DATABASE_URL:-Server=mysql;Port=3306;Database=student_db;Uid=root;Pwd=StudentDB123!;SslMode=None;}
     depends_on:
       - mysql
     networks:
@@ -20,23 +22,14 @@ services:
   mysql:
     image: mysql:8.0
     ports:
-      - "3307:3306"  # Puerto externo 3307
+      - "${MYSQL_PORT:-3306}:3306"
     environment:
-      MYSQL_ROOT_PASSWORD: StudentDB123!
-      MYSQL_DATABASE: student_db
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-StudentDB123!}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-student_db}
       MYSQL_CHARACTER_SET_SERVER: utf8mb4
       MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
     volumes:
       - mysql_data:/var/lib/mysql
-    networks:
-      - student-network
-    restart: unless-stopped
-
-  # Adminer (Interfaz web para MySQL)
-  adminer:
-    image: adminer:latest
-    ports:
-      - "8080:8080"
     networks:
       - student-network
     restart: unless-stopped

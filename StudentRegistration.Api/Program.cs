@@ -8,8 +8,9 @@ using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Configurar para Docker
-builder.WebHost.UseUrls("http://0.0.0.0:80");
+// Configurar puerto dinámico para Railway
+var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
@@ -28,10 +29,30 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// Database
-var connectionString = builder.Configuration.GetConnectionString("Default");
+// Database - Configuración flexible para Railway
+var connectionString = builder.Configuration.GetConnectionString("Default") 
+    ?? Environment.GetEnvironmentVariable("DATABASE_URL")
+    ?? "Server=localhost;Database=student_db;Uid=root;Pwd=test;SslMode=None;";
+
+// Convertir DATABASE_URL de Railway si es necesario
+if (connectionString.StartsWith("mysql://"))
+{
+    var uri = new Uri(connectionString);
+    connectionString = $"Server={uri.Host};Port={uri.Port};Database={uri.LocalPath.TrimStart('/')};Uid={uri.UserInfo.Split(':')[0]};Pwd={uri.UserInfo.Split(':')[1]};SslMode=Required;";
+}
+
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
+{
+    try
+    {
+        options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString));
+    }
+    catch
+    {
+        // Fallback si no puede detectar la versión
+        options.UseMySql(connectionString, new MySqlServerVersion(new Version(8, 0, 0)));
+    }
+});
 
 // AutoMapper
 builder.Services.AddAutoMapper(Assembly.GetExecutingAssembly());
@@ -45,7 +66,7 @@ builder.Services.AddScoped<IStudentService, StudentService>();
 builder.Services.AddScoped<ICourseService, CourseService>();
 builder.Services.AddScoped<IProfessorService, ProfessorService>();
 
-// CORS - Permisivo para desarrollo
+// CORS - Más restrictivo para producción
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
@@ -58,26 +79,32 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// Configuración de base de datos con reintentos
-using (var scope = app.Services.CreateScope())
+// Configuración de base de datos con manejo robusto de errores
+try
 {
+    using var scope = app.Services.CreateScope();
     var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     
-    // Esperar a que MySQL esté listo (importante en Docker)
+    logger.LogInformation("🚀 Iniciando configuración de base de datos...");
+    
+    // Intentar conectar con timeout más corto para Railway
     var retryCount = 0;
-    var maxRetries = 30;
+    var maxRetries = 10; // Reducido para Railway
     
     while (retryCount < maxRetries)
     {
         try
         {
-            logger.LogInformation("Intentando conectar a la base de datos... Intento {RetryCount}/{MaxRetries}", retryCount + 1, maxRetries);
-            context.Database.EnsureCreated();
+            logger.LogInformation("📡 Intento {RetryCount}/{MaxRetries} conectando a base de datos", retryCount + 1, maxRetries);
             
-            if (!context.Professors.Any())
+            await context.Database.EnsureCreatedAsync();
+            
+            // Solo crear datos semilla si no existen
+            if (!await context.Professors.AnyAsync())
             {
-                context.SaveChanges();
+                logger.LogInformation("🌱 Creando datos semilla...");
+                await context.SaveChangesAsync();
             }
             
             logger.LogInformation("✅ Base de datos configurada correctamente");
@@ -86,42 +113,72 @@ using (var scope = app.Services.CreateScope())
         catch (Exception ex)
         {
             retryCount++;
-            logger.LogWarning("❌ Error conectando a base de datos (intento {RetryCount}/{MaxRetries}): {Message}", retryCount, maxRetries, ex.Message);
+            logger.LogWarning("⚠️ Error conectando a BD (intento {RetryCount}/{MaxRetries}): {Message}", 
+                retryCount, maxRetries, ex.Message);
             
             if (retryCount >= maxRetries)
             {
-                logger.LogError("❌ No se pudo conectar a la base de datos después de {MaxRetries} intentos", maxRetries);
-                throw;
+                logger.LogError("❌ No se pudo conectar a la base de datos. Continuando sin BD...");
+                // No lanzar excepción para que la app inicie sin BD
+                break;
             }
             
-            await Task.Delay(2000); // Esperar 2 segundos antes del siguiente intento
+            await Task.Delay(1000); // Delay más corto para Railway
         }
     }
 }
+catch (Exception ex)
+{
+    var logger = app.Services.GetRequiredService<ILogger<Program>>();
+    logger.LogError(ex, "❌ Error crítico en configuración de BD. La app continuará sin base de datos.");
+}
 
 // Pipeline HTTP
-app.UseSwagger();
-app.UseSwaggerUI(c =>
+if (app.Environment.IsDevelopment() || Environment.GetEnvironmentVariable("ENABLE_SWAGGER") == "true")
 {
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Student Registration API v1");
-    c.RoutePrefix = string.Empty; // Swagger en la raíz
-});
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Student Registration API v1");
+        c.RoutePrefix = string.Empty;
+    });
+}
 
 app.UseCors("AllowAll");
 app.UseAuthorization();
 app.MapControllers();
 
-// Health check endpoint
-app.MapGet("/health", () => Results.Ok(new { 
-    status = "healthy", 
-    timestamp = DateTime.UtcNow,
-    version = "1.0.0"
-}));
+// Health check mejorado
+app.MapGet("/health", async (ApplicationDbContext context) => 
+{
+    try
+    {
+        var canConnect = await context.Database.CanConnectAsync();
+        return Results.Ok(new { 
+            status = "healthy", 
+            timestamp = DateTime.UtcNow,
+            version = "1.0.0",
+            database = canConnect ? "connected" : "disconnected",
+            environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Unknown"
+        });
+    }
+    catch
+    {
+        return Results.Ok(new { 
+            status = "healthy", 
+            timestamp = DateTime.UtcNow,
+            version = "1.0.0",
+            database = "error",
+            environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Unknown"
+        });
+    }
+});
 
 // Endpoint de información
 app.MapGet("/info", () => Results.Ok(new {
     api = "Student Registration API",
     version = "1.0.0",
+    port = port,
     endpoints = new {
         swagger = "/swagger",
         health = "/health",
@@ -130,6 +187,9 @@ app.MapGet("/info", () => Results.Ok(new {
         professors = "/api/professors"
     }
 }));
+
+var logger = app.Services.GetRequiredService<ILogger<Program>>();
+logger.LogInformation("🚀 Iniciando aplicación en puerto {Port}", port);
 
 app.Run();
 

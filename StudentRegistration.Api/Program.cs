@@ -29,9 +29,10 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// Base de datos simplificada para Railway
-var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL") 
-    ?? Environment.GetEnvironmentVariable("MYSQL_URL")
+// Base de datos usando las variables de Railway MySQL
+var connectionString = Environment.GetEnvironmentVariable("MYSQL_URL") 
+    ?? Environment.GetEnvironmentVariable("DATABASE_URL")
+    ?? Environment.GetEnvironmentVariable("MYSQL_PUBLIC_URL")
     ?? builder.Configuration.GetConnectionString("Default")
     ?? "Data Source=student_db.sqlite";
 
@@ -90,9 +91,9 @@ try
     using var scope = app.Services.CreateScope();
     var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     
-    appLogger.LogInformation("🔄 Configurando base de datos...");
+    appLogger.LogInformation("🔄 Configurando base de datos Railway MySQL...");
     appLogger.LogInformation("🔗 Connection String Type: {Type}", 
-        connectionString.StartsWith("mysql://") ? "MySQL URL" : 
+        connectionString.StartsWith("mysql://") ? "Railway MySQL URL" : 
         connectionString.Contains("Server=") ? "MySQL Direct" : "SQLite");
     
     await context.Database.EnsureCreatedAsync();
@@ -103,7 +104,7 @@ try
         await context.SaveChangesAsync();
     }
     
-    appLogger.LogInformation("✅ Base de datos configurada correctamente");
+    appLogger.LogInformation("✅ Base de datos Railway MySQL configurada correctamente");
 }
 catch (Exception ex)
 {
@@ -128,7 +129,7 @@ app.MapGet("/health", async (ApplicationDbContext context) =>
     try
     {
         var canConnect = await context.Database.CanConnectAsync();
-        var connectionType = connectionString.StartsWith("mysql://") ? "MySQL URL" : 
+        var connectionType = connectionString.StartsWith("mysql://") ? "Railway MySQL URL" : 
                            connectionString.Contains("Server=") ? "MySQL Direct" : "SQLite";
         
         return Results.Ok(new { 
@@ -155,10 +156,15 @@ app.MapGet("/health", async (ApplicationDbContext context) =>
     }
 });
 
-// Debug endpoint para verificar variables
+// Debug endpoint actualizado
 app.MapGet("/debug", () => Results.Ok(new {
-    databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL") ?? "Not set",
     mysqlUrl = Environment.GetEnvironmentVariable("MYSQL_URL") ?? "Not set",
+    mysqlPublicUrl = Environment.GetEnvironmentVariable("MYSQL_PUBLIC_URL") ?? "Not set",
+    databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL") ?? "Not set",
+    mysqlHost = Environment.GetEnvironmentVariable("MYSQLHOST") ?? "Not set",
+    mysqlPort = Environment.GetEnvironmentVariable("MYSQLPORT") ?? "Not set",
+    mysqlUser = Environment.GetEnvironmentVariable("MYSQLUSER") ?? "Not set",
+    mysqlDatabase = Environment.GetEnvironmentVariable("MYSQL_DATABASE") ?? "Not set",
     defaultConnection = builder.Configuration.GetConnectionString("Default") ?? "Not set",
     finalConnection = connectionString.Length > 50 ? connectionString.Substring(0, 50) + "..." : connectionString
 }));

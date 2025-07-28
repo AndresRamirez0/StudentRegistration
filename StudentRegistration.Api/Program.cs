@@ -8,8 +8,8 @@ using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Configurar puerto dinámico para Railway
-var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+// Puerto dinámico para Render (usa puerto 10000 por defecto)
+var port = Environment.GetEnvironmentVariable("PORT") ?? "10000";
 builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
 builder.Services.AddControllers()
@@ -25,33 +25,16 @@ builder.Services.AddSwaggerGen(c =>
     c.SwaggerDoc("v1", new() { 
         Title = "Student Registration API", 
         Version = "v1",
-        Description = "API para el sistema de registro de estudiantes"
+        Description = "API para el sistema de registro de estudiantes - Render Deploy"
     });
 });
 
-// Database - Configuración flexible para Railway
-var connectionString = builder.Configuration.GetConnectionString("Default") 
-    ?? Environment.GetEnvironmentVariable("DATABASE_URL")
-    ?? "Server=localhost;Database=student_db;Uid=root;Pwd=test;SslMode=None;";
-
-// Convertir DATABASE_URL de Railway si es necesario
-if (connectionString.StartsWith("mysql://"))
-{
-    var uri = new Uri(connectionString);
-    connectionString = $"Server={uri.Host};Port={uri.Port};Database={uri.LocalPath.TrimStart('/')};Uid={uri.UserInfo.Split(':')[0]};Pwd={uri.UserInfo.Split(':')[1]};SslMode=Required;";
-}
-
+// Base de datos - Usar SQLite para simplicidad en Render free tier
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
 {
-    try
-    {
-        options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString));
-    }
-    catch
-    {
-        // Fallback si no puede detectar la versión
-        options.UseMySql(connectionString, new MySqlServerVersion(new Version(8, 0, 0)));
-    }
+    // Para Render free tier, usar SQLite temporalmente
+    var dbPath = Path.Combine(Environment.CurrentDirectory, "student_db.sqlite");
+    options.UseSqlite($"Data Source={dbPath}");
 });
 
 // AutoMapper
@@ -66,7 +49,7 @@ builder.Services.AddScoped<IStudentService, StudentService>();
 builder.Services.AddScoped<ICourseService, CourseService>();
 builder.Services.AddScoped<IProfessorService, ProfessorService>();
 
-// CORS - Más restrictivo para producción
+// CORS para Angular
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
@@ -79,109 +62,61 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// Obtener logger una sola vez al inicio
-var appLogger = app.Services.GetRequiredService<ILogger<Program>>();
-
-// Configuración de base de datos con manejo robusto de errores
+// Configuración de base de datos automática
 try
 {
     using var scope = app.Services.CreateScope();
     var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     
-    appLogger.LogInformation("🚀 Iniciando configuración de base de datos...");
+    logger.LogInformation("🔄 Configurando base de datos SQLite...");
     
-    // Intentar conectar con timeout más corto para Railway
-    var retryCount = 0;
-    var maxRetries = 10; // Reducido para Railway
+    // Crear base de datos
+    await context.Database.EnsureCreatedAsync();
     
-    while (retryCount < maxRetries)
+    // Crear datos semilla si no existen
+    if (!await context.Professors.AnyAsync())
     {
-        try
-        {
-            appLogger.LogInformation("📡 Intento {RetryCount}/{MaxRetries} conectando a base de datos", retryCount + 1, maxRetries);
-            
-            await context.Database.EnsureCreatedAsync();
-            
-            // Solo crear datos semilla si no existen
-            if (!await context.Professors.AnyAsync())
-            {
-                appLogger.LogInformation("🌱 Creando datos semilla...");
-                await context.SaveChangesAsync();
-            }
-            
-            appLogger.LogInformation("✅ Base de datos configurada correctamente");
-            break;
-        }
-        catch (Exception ex)
-        {
-            retryCount++;
-            appLogger.LogWarning("⚠️ Error conectando a BD (intento {RetryCount}/{MaxRetries}): {Message}", 
-                retryCount, maxRetries, ex.Message);
-            
-            if (retryCount >= maxRetries)
-            {
-                appLogger.LogError("❌ No se pudo conectar a la base de datos. Continuando sin BD...");
-                // No lanzar excepción para que la app inicie sin BD
-                break;
-            }
-            
-            await Task.Delay(1000); // Delay más corto para Railway
-        }
+        logger.LogInformation("🌱 Creando datos semilla...");
+        await context.SaveChangesAsync();
     }
+    
+    logger.LogInformation("✅ Base de datos SQLite configurada correctamente");
 }
 catch (Exception ex)
 {
-    appLogger.LogError(ex, "❌ Error crítico en configuración de BD. La app continuará sin base de datos.");
+    var logger = app.Services.GetRequiredService<ILogger<Program>>();
+    logger.LogError(ex, "❌ Error configurando base de datos");
 }
 
-// Pipeline HTTP
-if (app.Environment.IsDevelopment() || Environment.GetEnvironmentVariable("ENABLE_SWAGGER") == "true")
+// Habilitar Swagger en producción para Render
+app.UseSwagger();
+app.UseSwaggerUI(c =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI(c =>
-    {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Student Registration API v1");
-        c.RoutePrefix = string.Empty;
-    });
-}
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Student Registration API v1");
+    c.RoutePrefix = string.Empty;
+});
 
 app.UseCors("AllowAll");
 app.UseAuthorization();
 app.MapControllers();
 
-// Health check mejorado
-app.MapGet("/health", async (ApplicationDbContext context) => 
-{
-    try
-    {
-        var canConnect = await context.Database.CanConnectAsync();
-        return Results.Ok(new { 
-            status = "healthy", 
-            timestamp = DateTime.UtcNow,
-            version = "1.0.0",
-            database = canConnect ? "connected" : "disconnected",
-            environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Unknown"
-        });
-    }
-    catch
-    {
-        return Results.Ok(new { 
-            status = "healthy", 
-            timestamp = DateTime.UtcNow,
-            version = "1.0.0",
-            database = "error",
-            environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Unknown"
-        });
-    }
-});
+// Health check
+app.MapGet("/health", () => Results.Ok(new { 
+    status = "healthy", 
+    timestamp = DateTime.UtcNow,
+    version = "1.0.0",
+    platform = "Render.com",
+    port = port
+}));
 
-// Endpoint de información
+// Info endpoint
 app.MapGet("/info", () => Results.Ok(new {
     api = "Student Registration API",
     version = "1.0.0",
-    port = port,
+    platform = "Render.com",
     endpoints = new {
-        swagger = "/swagger",
+        swagger = "/",
         health = "/health",
         students = "/api/students",
         courses = "/api/courses",
@@ -189,7 +124,8 @@ app.MapGet("/info", () => Results.Ok(new {
     }
 }));
 
-appLogger.LogInformation("🚀 Iniciando aplicación en puerto {Port}", port);
+var logger = app.Services.GetRequiredService<ILogger<Program>>();
+logger.LogInformation("🚀 Iniciando Student Registration API en Render - Puerto: {Port}", port);
 
 app.Run();
 

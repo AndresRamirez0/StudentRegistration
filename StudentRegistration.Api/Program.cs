@@ -62,14 +62,16 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// Obtener logger una sola vez
+var appLogger = app.Services.GetRequiredService<ILogger<Program>>();
+
 // Configuración de base de datos automática
 try
 {
     using var scope = app.Services.CreateScope();
     var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     
-    logger.LogInformation("🔄 Configurando base de datos SQLite...");
+    appLogger.LogInformation("🔄 Configurando base de datos SQLite...");
     
     // Crear base de datos
     await context.Database.EnsureCreatedAsync();
@@ -77,16 +79,15 @@ try
     // Crear datos semilla si no existen
     if (!await context.Professors.AnyAsync())
     {
-        logger.LogInformation("🌱 Creando datos semilla...");
+        appLogger.LogInformation("🌱 Creando datos semilla...");
         await context.SaveChangesAsync();
     }
     
-    logger.LogInformation("✅ Base de datos SQLite configurada correctamente");
+    appLogger.LogInformation("✅ Base de datos SQLite configurada correctamente");
 }
 catch (Exception ex)
 {
-    var logger = app.Services.GetRequiredService<ILogger<Program>>();
-    logger.LogError(ex, "❌ Error configurando base de datos");
+    appLogger.LogError(ex, "❌ Error configurando base de datos");
 }
 
 // Habilitar Swagger en producción para Render
@@ -124,8 +125,7 @@ app.MapGet("/info", () => Results.Ok(new {
     }
 }));
 
-var logger = app.Services.GetRequiredService<ILogger<Program>>();
-logger.LogInformation("🚀 Iniciando Student Registration API en Render - Puerto: {Port}", port);
+appLogger.LogInformation("🚀 Iniciando Student Registration API en Render - Puerto: {Port}", port);
 
 app.Run();
 

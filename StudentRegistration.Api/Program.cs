@@ -8,8 +8,8 @@ using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Puerto dinámico para Render (usa puerto 10000 por defecto)
-var port = Environment.GetEnvironmentVariable("PORT") ?? "10000";
+// Puerto dinámico para Railway (usa puerto 8080 por defecto)
+var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
 builder.Services.AddControllers()
@@ -25,16 +25,37 @@ builder.Services.AddSwaggerGen(c =>
     c.SwaggerDoc("v1", new() { 
         Title = "Student Registration API", 
         Version = "v1",
-        Description = "API para el sistema de registro de estudiantes - Render Deploy"
+        Description = "API para el sistema de registro de estudiantes - Railway Deploy"
     });
 });
 
-// Base de datos - Usar SQLite para simplicidad en Render free tier
+// Base de datos - MySQL para Railway con fallback a SQLite
+var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL") 
+    ?? builder.Configuration.GetConnectionString("Default")
+    ?? "Data Source=student_db.sqlite";
+
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
 {
-    // Para Render free tier, usar SQLite temporalmente
-    var dbPath = Path.Combine(Environment.CurrentDirectory, "student_db.sqlite");
-    options.UseSqlite($"Data Source={dbPath}");
+    if (connectionString.StartsWith("mysql://") || connectionString.Contains("mysql"))
+    {
+        // Railway MySQL
+        if (connectionString.StartsWith("mysql://"))
+        {
+            var uri = new Uri(connectionString);
+            var mysqlConnection = $"Server={uri.Host};Port={uri.Port};Database={uri.LocalPath.TrimStart('/')};Uid={uri.UserInfo.Split(':')[0]};Pwd={uri.UserInfo.Split(':')[1]};SslMode=Required;";
+            options.UseMySql(mysqlConnection, ServerVersion.AutoDetect(mysqlConnection));
+        }
+        else
+        {
+            // Cadena MySQL directa
+            options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString));
+        }
+    }
+    else
+    {
+        // Fallback a SQLite para desarrollo local
+        options.UseSqlite(connectionString);
+    }
 });
 
 // AutoMapper
@@ -65,32 +86,57 @@ var app = builder.Build();
 // Obtener logger una sola vez
 var appLogger = app.Services.GetRequiredService<ILogger<Program>>();
 
-// Configuración de base de datos automática
+// Configuración de base de datos con reintentos para Railway
 try
 {
     using var scope = app.Services.CreateScope();
     var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     
-    appLogger.LogInformation("🔄 Configurando base de datos SQLite...");
+    appLogger.LogInformation("🔄 Configurando base de datos para Railway...");
     
-    // Crear base de datos
-    await context.Database.EnsureCreatedAsync();
+    var retryCount = 0;
+    var maxRetries = 15; // Más reintentos para Railway
     
-    // Crear datos semilla si no existen
-    if (!await context.Professors.AnyAsync())
+    while (retryCount < maxRetries)
     {
-        appLogger.LogInformation("🌱 Creando datos semilla...");
-        await context.SaveChangesAsync();
+        try
+        {
+            appLogger.LogInformation("📡 Intento {RetryCount}/{MaxRetries} conectando a base de datos", retryCount + 1, maxRetries);
+            
+            await context.Database.EnsureCreatedAsync();
+            
+            // Crear datos semilla si no existen
+            if (!await context.Professors.AnyAsync())
+            {
+                appLogger.LogInformation("🌱 Creando datos semilla...");
+                await context.SaveChangesAsync();
+            }
+            
+            appLogger.LogInformation("✅ Base de datos configurada correctamente");
+            break;
+        }
+        catch (Exception ex)
+        {
+            retryCount++;
+            appLogger.LogWarning("⚠️ Error conectando a BD (intento {RetryCount}/{MaxRetries}): {Message}", 
+                retryCount, maxRetries, ex.Message);
+            
+            if (retryCount >= maxRetries)
+            {
+                appLogger.LogError("❌ No se pudo conectar a la base de datos. Continuando sin BD...");
+                break;
+            }
+            
+            await Task.Delay(2000); // Esperar 2 segundos
+        }
     }
-    
-    appLogger.LogInformation("✅ Base de datos SQLite configurada correctamente");
 }
 catch (Exception ex)
 {
-    appLogger.LogError(ex, "❌ Error configurando base de datos");
+    appLogger.LogError(ex, "❌ Error crítico en configuración de BD");
 }
 
-// Habilitar Swagger en producción para Render
+// Habilitar Swagger en Railway
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
@@ -102,20 +148,39 @@ app.UseCors("AllowAll");
 app.UseAuthorization();
 app.MapControllers();
 
-// Health check
-app.MapGet("/health", () => Results.Ok(new { 
-    status = "healthy", 
-    timestamp = DateTime.UtcNow,
-    version = "1.0.0",
-    platform = "Render.com",
-    port = port
-}));
+// Health check para Railway
+app.MapGet("/health", async (ApplicationDbContext context) => 
+{
+    try
+    {
+        var canConnect = await context.Database.CanConnectAsync();
+        return Results.Ok(new { 
+            status = "healthy", 
+            timestamp = DateTime.UtcNow,
+            version = "1.0.0",
+            platform = "Railway.app",
+            port = port,
+            database = canConnect ? "connected" : "disconnected"
+        });
+    }
+    catch
+    {
+        return Results.Ok(new { 
+            status = "healthy", 
+            timestamp = DateTime.UtcNow,
+            version = "1.0.0",
+            platform = "Railway.app",
+            port = port,
+            database = "error"
+        });
+    }
+});
 
 // Info endpoint
 app.MapGet("/info", () => Results.Ok(new {
     api = "Student Registration API",
     version = "1.0.0",
-    platform = "Render.com",
+    platform = "Railway.app",
     endpoints = new {
         swagger = "/",
         health = "/health",
@@ -125,7 +190,7 @@ app.MapGet("/info", () => Results.Ok(new {
     }
 }));
 
-appLogger.LogInformation("🚀 Iniciando Student Registration API en Render - Puerto: {Port}", port);
+appLogger.LogInformation("🚀 Iniciando Student Registration API en Railway - Puerto: {Port}", port);
 
 app.Run();
 

@@ -2,7 +2,7 @@
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
 WORKDIR /app
 
-# Configurar puerto dinámico para Railway
+# Railway usa puerto dinámico
 ENV PORT=8080
 EXPOSE $PORT
 
@@ -29,4 +29,8 @@ RUN dotnet publish "StudentRegistration.Api.csproj" -c Release -o /app/publish /
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
+
+# Railway usa variable PORT
+ENV ASPNETCORE_URLS=http://+:$PORT
+
 ENTRYPOINT ["dotnet", "StudentRegistration.Api.dll"]

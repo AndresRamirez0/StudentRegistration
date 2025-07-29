@@ -94,7 +94,19 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// ✅ CONFIGURACIÓN DE BASE DE DATOS MEJORADA CON DEBUGGING
+// ✅ FUNCIÓN HELPER LOCAL PARA GENERAR CÓDIGOS DE ESTUDIANTE
+static async Task<string> GenerateStudentCodeAsync(ApplicationDbContext context)
+{
+    string studentCode;
+    do
+    {
+        studentCode = "STU" + DateTime.Now.Year + Random.Shared.Next(1000, 9999);
+    } while (await context.Students.AnyAsync(s => s.StudentCode == studentCode));
+
+    return studentCode;
+}
+
+// Configuración de base de datos
 try
 {
     using var scope = app.Services.CreateScope();
@@ -103,7 +115,6 @@ try
     var appLogger = app.Services.GetRequiredService<ILogger<Program>>();
     appLogger.LogInformation("🔄 Configurando base de datos...");
 
-    // ✅ ASEGURAR QUE LA BASE DE DATOS SE CREE CORRECTAMENTE
     appLogger.LogInformation("🗑️ Eliminando base de datos existente...");
     await context.Database.EnsureDeletedAsync();
 
@@ -113,7 +124,6 @@ try
     appLogger.LogInformation("🌱 Creando datos semilla...");
     await context.SaveChangesAsync();
 
-    // ✅ FORZAR CREACIÓN DEL USUARIO ADMIN SIEMPRE
     appLogger.LogInformation("👤 Verificando usuario admin...");
     var existingAdmin = await context.Users.FirstOrDefaultAsync(u => u.Username == "admin");
 
@@ -136,7 +146,6 @@ try
         await context.SaveChangesAsync();
         appLogger.LogInformation("✅ Usuario admin creado exitosamente: admin/123");
 
-        // ✅ VERIFICAR QUE SE GUARDÓ CORRECTAMENTE
         var verifyAdmin = await context.Users.FirstOrDefaultAsync(u => u.Username == "admin");
         if (verifyAdmin != null)
         {
@@ -152,7 +161,6 @@ try
         appLogger.LogInformation("✅ Usuario admin ya existe con ID: {Id}", existingAdmin.Id);
     }
 
-    // ✅ MOSTRAR ESTADÍSTICAS DE LA BASE DE DATOS
     var userCount = await context.Users.CountAsync();
     var professorCount = await context.Professors.CountAsync();
     var courseCount = await context.Courses.CountAsync();
@@ -241,8 +249,7 @@ app.MapGet("/test/auth-status", async (ApplicationDbContext context) =>
     }
 });
 
-// ✅ ENDPOINT PARA VERIFICAR ESTUDIANTES VS USUARIOS
-app.MapGet("/test/students-vs-users", async (ApplicationDbContext context) =>
+app.MapGet("/test/students-vs-users", async (ApplicationDbContext context) => 
 {
     try
     {
@@ -255,15 +262,14 @@ app.MapGet("/test/students-vs-users", async (ApplicationDbContext context) =>
             .Select(s => new { s.Id, s.FirstName, s.LastName, s.Email, s.StudentCode })
             .ToListAsync();
 
-        var usersWithStudentRole = allUsers.Where(u =>
-            u.Role.Equals("Student", StringComparison.OrdinalIgnoreCase) ||
+        var usersWithStudentRole = allUsers.Where(u => 
+            u.Role.Equals("Student", StringComparison.OrdinalIgnoreCase) || 
             u.Role.Equals("student", StringComparison.OrdinalIgnoreCase) ||
             string.IsNullOrEmpty(u.Role)).ToList();
 
         var usersWithoutStudentRecord = usersWithStudentRole.Where(u => u.StudentId == null).ToList();
 
-        return Results.Ok(new
-        {
+        return Results.Ok(new {
             totalUsers = allUsers.Count,
             totalStudents = allStudents.Count,
             usersWithStudentRole = usersWithStudentRole.Count,
@@ -279,15 +285,13 @@ app.MapGet("/test/students-vs-users", async (ApplicationDbContext context) =>
     }
 });
 
-// ✅ ENDPOINT PARA MIGRAR USUARIOS EXISTENTES A ESTUDIANTES
-app.MapPost("/admin/migrate-students", async (ApplicationDbContext context) =>
+app.MapPost("/admin/migrate-students", async (ApplicationDbContext context) => 
 {
     try
     {
-        // Buscar usuarios que deberían ser estudiantes pero no tienen registro Student
         var usersToMigrate = await context.Users
-            .Where(u => u.IsActive &&
-                       (u.Role.ToLower() == "student" || u.Role == "") &&
+            .Where(u => u.IsActive && 
+                       (u.Role.ToLower() == "student" || u.Role == "") && 
                        u.StudentId == null)
             .ToListAsync();
 
@@ -295,7 +299,6 @@ app.MapPost("/admin/migrate-students", async (ApplicationDbContext context) =>
 
         foreach (var user in usersToMigrate)
         {
-            // Crear registro Student
             var student = new Student
             {
                 FirstName = user.FirstName,
@@ -309,16 +312,14 @@ app.MapPost("/admin/migrate-students", async (ApplicationDbContext context) =>
             context.Students.Add(student);
             await context.SaveChangesAsync();
 
-            // Actualizar usuario
             user.StudentId = student.Id;
-            user.Role = "Student"; // Normalizar rol
+            user.Role = "Student";
             migratedCount++;
         }
 
         await context.SaveChangesAsync();
 
-        return Results.Ok(new
-        {
+        return Results.Ok(new {
             message = $"Migración completada: {migratedCount} usuarios migrados a estudiantes",
             migratedCount = migratedCount,
             migratedUsers = usersToMigrate.Select(u => new { u.Id, u.Username, u.Email }).ToList()
@@ -330,12 +331,10 @@ app.MapPost("/admin/migrate-students", async (ApplicationDbContext context) =>
     }
 });
 
-// ✅ ENDPOINT PARA RECREAR USUARIO ADMIN
 app.MapPost("/admin/recreate-admin", async (ApplicationDbContext context) =>
 {
     try
     {
-        // Eliminar admin existente
         var existingAdmin = await context.Users.FirstOrDefaultAsync(u => u.Username == "admin");
         if (existingAdmin != null)
         {
@@ -343,7 +342,6 @@ app.MapPost("/admin/recreate-admin", async (ApplicationDbContext context) =>
             await context.SaveChangesAsync();
         }
 
-        // Crear nuevo admin
         var newAdmin = new User
         {
             Username = "admin",
@@ -376,15 +374,3 @@ app.MapPost("/admin/recreate-admin", async (ApplicationDbContext context) =>
 app.Run();
 
 public partial class Program { }
-
-// ✅ FUNCIÓN HELPER PARA GENERAR CÓDIGOS DE ESTUDIANTE
-static async Task<string> GenerateStudentCodeAsync(ApplicationDbContext context)
-{
-    string studentCode;
-    do
-    {
-        studentCode = "STU" + DateTime.Now.Year + Random.Shared.Next(1000, 9999);
-    } while (await context.Students.AnyAsync(s => s.StudentCode == studentCode));
-
-    return studentCode;
-}

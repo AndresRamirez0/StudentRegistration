@@ -34,16 +34,16 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new() { 
-        Title = "Student Registration API", 
+    c.SwaggerDoc("v1", new()
+    {
+        Title = "Student Registration API",
         Version = "v1",
         Description = "API simple para el sistema de registro de estudiantes - Railway"
     });
-    // ✅ SIN CONFIGURACIÓN JWT - MÁS SIMPLE
 });
 
 // Base de datos
-var connectionString = Environment.GetEnvironmentVariable("MYSQL_URL") 
+var connectionString = Environment.GetEnvironmentVariable("MYSQL_URL")
     ?? Environment.GetEnvironmentVariable("DATABASE_URL")
     ?? Environment.GetEnvironmentVariable("MYSQL_PUBLIC_URL")
     ?? builder.Configuration.GetConnectionString("Default")
@@ -67,9 +67,6 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
         options.UseSqlite(connectionString);
     }
 });
-
-// ✅ SIN JWT - SISTEMA SIMPLE
-// (Remover toda la configuración de Authentication/Authorization)
 
 // AutoMapper
 builder.Services.AddAutoMapper(Assembly.GetExecutingAssembly());
@@ -97,42 +94,79 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// Configuración de base de datos
+// ✅ CONFIGURACIÓN DE BASE DE DATOS MEJORADA CON DEBUGGING
 try
 {
     using var scope = app.Services.CreateScope();
     var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    
+
     var appLogger = app.Services.GetRequiredService<ILogger<Program>>();
     appLogger.LogInformation("🔄 Configurando base de datos...");
-    
+
+    // ✅ ASEGURAR QUE LA BASE DE DATOS SE CREE CORRECTAMENTE
+    appLogger.LogInformation("🗑️ Eliminando base de datos existente...");
     await context.Database.EnsureDeletedAsync();
+
+    appLogger.LogInformation("🆕 Creando nueva estructura de base de datos...");
     await context.Database.EnsureCreatedAsync();
+
+    appLogger.LogInformation("🌱 Creando datos semilla...");
     await context.SaveChangesAsync();
-    
-    if (!await context.Users.AnyAsync(u => u.Username == "admin"))
+
+    // ✅ FORZAR CREACIÓN DEL USUARIO ADMIN SIEMPRE
+    appLogger.LogInformation("👤 Verificando usuario admin...");
+    var existingAdmin = await context.Users.FirstOrDefaultAsync(u => u.Username == "admin");
+
+    if (existingAdmin == null)
     {
+        appLogger.LogInformation("🔨 Creando usuario admin...");
         var adminUser = new User
         {
             Username = "admin",
             Email = "admin@university.edu",
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword("123"), // ✅ CONTRASEÑA SUPER SIMPLE
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("123"),
             FirstName = "Sistema",
             LastName = "Administrador",
             Role = "Admin",
             CreatedAt = DateTime.UtcNow,
             IsActive = true
         };
-        
+
         context.Users.Add(adminUser);
         await context.SaveChangesAsync();
-        appLogger.LogInformation("✅ Usuario admin creado: admin/123"); // ✅ CONTRASEÑA SIMPLE
+        appLogger.LogInformation("✅ Usuario admin creado exitosamente: admin/123");
+
+        // ✅ VERIFICAR QUE SE GUARDÓ CORRECTAMENTE
+        var verifyAdmin = await context.Users.FirstOrDefaultAsync(u => u.Username == "admin");
+        if (verifyAdmin != null)
+        {
+            appLogger.LogInformation("✅ Verificación: Usuario admin encontrado con ID: {Id}", verifyAdmin.Id);
+        }
+        else
+        {
+            appLogger.LogError("❌ Error: Usuario admin no se pudo verificar después de crearlo");
+        }
     }
+    else
+    {
+        appLogger.LogInformation("✅ Usuario admin ya existe con ID: {Id}", existingAdmin.Id);
+    }
+
+    // ✅ MOSTRAR ESTADÍSTICAS DE LA BASE DE DATOS
+    var userCount = await context.Users.CountAsync();
+    var professorCount = await context.Professors.CountAsync();
+    var courseCount = await context.Courses.CountAsync();
+
+    appLogger.LogInformation("📊 Estadísticas de BD: Users={UserCount}, Professors={ProfessorCount}, Courses={CourseCount}",
+        userCount, professorCount, courseCount);
+
+    appLogger.LogInformation("✅ Base de datos configurada correctamente");
 }
 catch (Exception ex)
 {
     var appLogger = app.Services.GetRequiredService<ILogger<Program>>();
-    appLogger.LogError(ex, "❌ Error configurando base de datos");
+    appLogger.LogError(ex, "❌ Error configurando base de datos: {Message}", ex.Message);
+    appLogger.LogError("❌ StackTrace: {StackTrace}", ex.StackTrace);
 }
 
 app.UseSwagger();
@@ -144,33 +178,110 @@ app.UseSwaggerUI(c =>
 
 app.UseCors("AllowAll");
 
-// ✅ SIN AUTHENTICATION/AUTHORIZATION MIDDLEWARE
-
 app.MapControllers();
 
-// Endpoints de verificación
-app.MapGet("/health", async (ApplicationDbContext context) => 
+// ✅ ENDPOINTS DE DEBUGGING SIN TIPOS COMPLEJOS
+app.MapGet("/health", async (ApplicationDbContext context) =>
 {
-    var canConnect = await context.Database.CanConnectAsync();
-    return Results.Ok(new { 
-        status = "healthy", 
-        timestamp = DateTime.UtcNow,
-        database = canConnect ? "connected" : "disconnected",
-        authType = "Simple (No JWT)"
-    });
+    try
+    {
+        var canConnect = await context.Database.CanConnectAsync();
+        return Results.Ok(new
+        {
+            status = "healthy",
+            timestamp = DateTime.UtcNow,
+            database = canConnect ? "connected" : "disconnected",
+            authType = "Simple (No JWT)"
+        });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new
+        {
+            status = "error",
+            message = ex.Message,
+            timestamp = DateTime.UtcNow
+        });
+    }
 });
 
-app.MapGet("/test/auth-status", async (ApplicationDbContext context) => 
+app.MapGet("/test/auth-status", async (ApplicationDbContext context) =>
 {
-    var usersCount = await context.Users.CountAsync();
-    var adminUser = await context.Users.FirstOrDefaultAsync(u => u.Username == "admin");
-    
-    return Results.Ok(new { 
-        totalUsers = usersCount,
-        adminExists = adminUser != null,
-        authType = "Simple Login (No JWT)",
-        timestamp = DateTime.UtcNow
-    });
+    try
+    {
+        var usersCount = await context.Users.CountAsync();
+        var adminUser = await context.Users.FirstOrDefaultAsync(u => u.Username == "admin");
+        var allUsers = await context.Users.Select(u => new { u.Id, u.Username, u.Email, u.Role, u.IsActive }).ToListAsync();
+
+        return Results.Ok(new
+        {
+            totalUsers = usersCount,
+            adminExists = adminUser != null,
+            adminDetails = adminUser != null ? new
+            {
+                id = adminUser.Id,
+                username = adminUser.Username,
+                email = adminUser.Email,
+                role = adminUser.Role,
+                isActive = adminUser.IsActive,
+                hasPassword = !string.IsNullOrEmpty(adminUser.PasswordHash)
+            } : null,
+            allUsers = allUsers,
+            authType = "Simple Login (No JWT)",
+            timestamp = DateTime.UtcNow
+        });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new
+        {
+            error = ex.Message,
+            timestamp = DateTime.UtcNow
+        });
+    }
+});
+
+// ✅ ENDPOINT PARA RECREAR USUARIO ADMIN
+app.MapPost("/admin/recreate-admin", async (ApplicationDbContext context) =>
+{
+    try
+    {
+        // Eliminar admin existente
+        var existingAdmin = await context.Users.FirstOrDefaultAsync(u => u.Username == "admin");
+        if (existingAdmin != null)
+        {
+            context.Users.Remove(existingAdmin);
+            await context.SaveChangesAsync();
+        }
+
+        // Crear nuevo admin
+        var newAdmin = new User
+        {
+            Username = "admin",
+            Email = "admin@university.edu",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("123"),
+            FirstName = "Sistema",
+            LastName = "Administrador",
+            Role = "Admin",
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        };
+
+        context.Users.Add(newAdmin);
+        await context.SaveChangesAsync();
+
+        return Results.Ok(new
+        {
+            message = "Usuario admin recreado exitosamente",
+            username = "admin",
+            password = "123",
+            id = newAdmin.Id
+        });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
 });
 
 app.Run();

@@ -1,4 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using StudentRegistration.Api.Data;
 using StudentRegistration.Api.Models.DTOs;
 using StudentRegistration.Api.Services;
 
@@ -9,10 +11,12 @@ namespace StudentRegistration.Api.Controllers
     public class StudentsController : ControllerBase
     {
         private readonly IStudentService _studentService;
+        private readonly ApplicationDbContext _context; // ✅ AGREGAR
 
-        public StudentsController(IStudentService studentService)
+        public StudentsController(IStudentService studentService, ApplicationDbContext context) // ✅ INYECTAR
         {
             _studentService = studentService;
+            _context = context; // ✅ ASIGNAR
         }
 
         /// <summary>
@@ -196,7 +200,48 @@ namespace StudentRegistration.Api.Controllers
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new { 
+                    message = ex.Message,
+                    studentId = studentId,
+                    error = "Error interno del servidor"
+                });
+            }
+        }
+
+        /// <summary>
+        /// ENDPOINT DE DEBUGGING - Verificar información de estudiante
+        /// </summary>
+        [HttpGet("debug/{id}")]
+        public async Task<ActionResult<object>> DebugStudent(int id)
+        {
+            try
+            {
+                // Verificar si el estudiante existe
+                var student = await _context.Students.FindAsync(id);
+                
+                // Verificar si hay un usuario relacionado
+                var user = await _context.Users.FirstOrDefaultAsync(u => u.StudentId == id);
+                
+                // Verificar si hay algún usuario con este ID como StudentId
+                var allUsers = await _context.Users.Where(u => u.StudentId == id).ToListAsync();
+                
+                // Obtener todos los estudiantes para comparar
+                var allStudents = await _context.Students.Select(s => new { s.Id, s.FirstName, s.LastName, s.Email }).ToListAsync();
+
+                return Ok(new
+                {
+                    studentExists = student != null,
+                    studentData = student,
+                    userExists = user != null,
+                    userData = user,
+                    allUsersWithThisStudentId = allUsers,
+                    allStudentsInDb = allStudents,
+                    requestedId = id
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = ex.Message, stackTrace = ex.StackTrace });
             }
         }
     }

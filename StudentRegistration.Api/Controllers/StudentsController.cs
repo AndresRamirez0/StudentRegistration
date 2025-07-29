@@ -6,7 +6,6 @@ namespace StudentRegistration.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    // ✅ SIN [Authorize] - ACCESO LIBRE
     public class StudentsController : ControllerBase
     {
         private readonly IStudentService _studentService;
@@ -38,6 +37,26 @@ namespace StudentRegistration.Api.Controllers
         /// </summary>
         [HttpGet("{id}")]
         public async Task<ActionResult<StudentDto>> GetStudent(int id)
+        {
+            try
+            {
+                var student = await _studentService.GetStudentByIdAsync(id);
+                if (student == null)
+                    return NotFound(new { message = "Estudiante no encontrado" });
+
+                return Ok(student);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Obtener información completa del estudiante para edición
+        /// </summary>
+        [HttpGet("{id}/edit-info")]
+        public async Task<ActionResult<object>> GetStudentEditInfo(int id)
         {
             try
             {

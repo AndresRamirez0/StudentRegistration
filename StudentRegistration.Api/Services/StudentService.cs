@@ -1,4 +1,4 @@
-using AutoMapper;
+ï»¿using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using StudentRegistration.Api.Data;
 using StudentRegistration.Api.Models.DTOs;
@@ -36,7 +36,21 @@ namespace StudentRegistration.Api.Services
                         .ThenInclude(c => c.Professor)
                 .FirstOrDefaultAsync(s => s.Id == id);
 
-            return student == null ? null : _mapper.Map<StudentDto>(student);
+            if (student == null) return null;
+
+            var studentDto = _mapper.Map<StudentDto>(student);
+            
+            // âœ… BUSCAR USUARIO RELACIONADO
+            var user = await _context.Users
+                .FirstOrDefaultAsync(u => u.StudentId == id);
+            
+            if (user != null)
+            {
+                studentDto.Username = user.Username;
+                studentDto.UserId = user.Id;
+            }
+
+            return studentDto;
         }
 
         public async Task<StudentDto> CreateStudentAsync(CreateStudentDto createStudentDto)
@@ -50,7 +64,7 @@ namespace StudentRegistration.Api.Services
 
             var student = _mapper.Map<Student>(createStudentDto);
             
-            // Generar código único de estudiante
+            // Generar cÃ³digo Ãºnico de estudiante
             string studentCode;
             do
             {
@@ -78,9 +92,41 @@ namespace StudentRegistration.Api.Services
             if (existingStudent != null)
                 throw new InvalidOperationException("Ya existe otro estudiante con ese email");
 
+            // âœ… ACTUALIZAR ESTUDIANTE
             _mapper.Map(updateStudentDto, student);
+            
+            // âœ… ACTUALIZAR TAMBIÃ‰N EL USUARIO RELACIONADO
+            var user = await _context.Users
+                .FirstOrDefaultAsync(u => u.StudentId == id);
+            
+            if (user != null)
+            {
+                user.FirstName = updateStudentDto.FirstName;
+                user.LastName = updateStudentDto.LastName;
+                user.Email = updateStudentDto.Email;
+                
+                // Actualizar username si se proporciona
+                if (!string.IsNullOrWhiteSpace(updateStudentDto.Username))
+                {
+                    // Verificar que el username no exista
+                    var existingUser = await _context.Users
+                        .FirstOrDefaultAsync(u => u.Username == updateStudentDto.Username && u.Id != user.Id);
+                    
+                    if (existingUser != null)
+                        throw new InvalidOperationException("Ya existe otro usuario con ese nombre de usuario");
+                    
+                    user.Username = updateStudentDto.Username;
+                }
+                
+                // Actualizar contraseÃ±a si se proporciona
+                if (!string.IsNullOrWhiteSpace(updateStudentDto.NewPassword))
+                {
+                    user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(updateStudentDto.NewPassword);
+                }
+            }
+            
             await _context.SaveChangesAsync();
-
+            
             return await GetStudentByIdAsync(id);
         }
 
@@ -105,9 +151,9 @@ namespace StudentRegistration.Api.Services
             if (student == null)
                 throw new InvalidOperationException("Estudiante no encontrado");
 
-            // Validar que no tenga más de 3 materias
+            // Validar que no tenga mÃ¡s de 3 materias
             if (enrollmentDto.CourseIds.Count > 3)
-                throw new InvalidOperationException("No puede inscribirse en más de 3 materias");
+                throw new InvalidOperationException("No puede inscribirse en mÃ¡s de 3 materias");
 
             // Verificar que las materias existan
             var courses = await _context.Courses
@@ -116,7 +162,7 @@ namespace StudentRegistration.Api.Services
                 .ToListAsync();
 
             if (courses.Count != enrollmentDto.CourseIds.Count)
-                throw new InvalidOperationException("Una o más materias no existen");
+                throw new InvalidOperationException("Una o mÃ¡s materias no existen");
 
             // Validar que no tenga clases con el mismo profesor
             var professorIds = courses.Select(c => c.ProfessorId).ToList();
@@ -141,7 +187,7 @@ namespace StudentRegistration.Api.Services
                 _context.StudentCourses.Add(enrollment);
             }
 
-            // Actualizar créditos totales
+            // Actualizar crÃ©ditos totales
             student.TotalCredits = courses.Sum(c => c.Credits);
 
             await _context.SaveChangesAsync();
@@ -162,14 +208,14 @@ namespace StudentRegistration.Api.Services
 
         public async Task<IEnumerable<ClassmateDto>> GetClassmatesAsync(int studentId, int courseId)
         {
-            // Verificar que el estudiante existe y está inscrito en la materia
+            // Verificar que el estudiante existe y estÃ¡ inscrito en la materia
             var studentExists = await _context.StudentCourses
                 .AnyAsync(sc => sc.StudentId == studentId && sc.CourseId == courseId);
 
             if (!studentExists)
-                throw new InvalidOperationException("El estudiante no está inscrito en esta materia");
+                throw new InvalidOperationException("El estudiante no estÃ¡ inscrito en esta materia");
 
-            // Obtener compañeros de clase (excluyendo al estudiante mismo)
+            // Obtener compaÃ±eros de clase (excluyendo al estudiante mismo)
             var classmates = await _context.StudentCourses
                 .Include(sc => sc.Student)
                 .Where(sc => sc.CourseId == courseId && sc.StudentId != studentId)

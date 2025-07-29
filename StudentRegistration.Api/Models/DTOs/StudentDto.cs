@@ -9,6 +9,11 @@ namespace StudentRegistration.Api.Models.DTOs
         public string StudentCode { get; set; } = string.Empty;
         public DateTime RegistrationDate { get; set; }
         public int TotalCredits { get; set; }
-        public List<CourseDto> Courses { get; set; } = new List<CourseDto>();
+        
+        // Información del usuario relacionado (para la edición)
+        public string? Username { get; set; }
+        public int? UserId { get; set; }
+        
+        public List<CourseDto> Courses { get; set; } = new();
     }
 }

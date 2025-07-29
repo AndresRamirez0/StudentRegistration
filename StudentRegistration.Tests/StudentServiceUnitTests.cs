@@ -1,9 +1,9 @@
-using Xunit;
+﻿using Xunit;
 using FluentAssertions;
 using AutoMapper;
 using Microsoft.EntityFrameworkCore;
 using StudentRegistration.Api.Data;
-using StudentRegistration.Api.Mapping;
+using StudentRegistration.Api.Mappings;  // ✅ CORREGIDO: Mappings con 's'
 using StudentRegistration.Api.Models.DTOs;
 using StudentRegistration.Api.Models.Entities;
 using StudentRegistration.Api.Services;
@@ -39,7 +39,7 @@ namespace StudentRegistration.Tests
             var createStudentDto = new CreateStudentDto
             {
                 FirstName = "Ana",
-                LastName = "Garc�a",
+                LastName = "García",
                 Email = "ana.garcia@test.com"
             };
 
@@ -49,7 +49,7 @@ namespace StudentRegistration.Tests
             // Assert
             result.Should().NotBeNull();
             result.FirstName.Should().Be("Ana");
-            result.LastName.Should().Be("Garc�a");
+            result.LastName.Should().Be("García");
             result.Email.Should().Be("ana.garcia@test.com");
             result.StudentCode.Should().StartWith("STU");
             result.RegistrationDate.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(1));

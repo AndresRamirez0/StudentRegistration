@@ -22,7 +22,6 @@ namespace StudentRegistration.Api.Models.DTOs
         public string Email { get; set; } = string.Empty;
         
         [Required]
-        // ✅ SIN RESTRICCIONES DE LONGITUD EN CONTRASEÑA
         public string Password { get; set; } = string.Empty;
         
         [Required]
@@ -41,25 +40,12 @@ namespace StudentRegistration.Api.Models.DTOs
         public UserDto? User { get; set; }
     }
 
-    public class UserDto
-    {
-        public int Id { get; set; }
-        public string Username { get; set; } = string.Empty;
-        public string Email { get; set; } = string.Empty;
-        public string FirstName { get; set; } = string.Empty;
-        public string LastName { get; set; } = string.Empty;
-        public string Role { get; set; } = string.Empty;
-        public DateTime CreatedAt { get; set; }
-        public DateTime? LastLoginAt { get; set; }
-    }
-
     public class ChangePasswordDto
     {
         [Required]
         public string CurrentPassword { get; set; } = string.Empty;
         
         [Required]
-        // ✅ SIN RESTRICCIONES DE LONGITUD EN NUEVA CONTRASEÑA
         public string NewPassword { get; set; } = string.Empty;
     }
 

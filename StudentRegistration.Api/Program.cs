@@ -115,15 +115,20 @@ try
     var appLogger = app.Services.GetRequiredService<ILogger<Program>>();
     appLogger.LogInformation("🔄 Configurando base de datos...");
 
-    appLogger.LogInformation("🗑️ Eliminando base de datos existente...");
-    await context.Database.EnsureDeletedAsync();
+    // ✅ SOLO CREAR SI NO EXISTE - NO ELIMINAR DATOS EXISTENTES
+    appLogger.LogInformation("🆕 Asegurando que la base de datos exista...");
+    await context.Database.EnsureCreatedAsync(); // NO usar EnsureDeletedAsync()
+    
+    appLogger.LogInformation("🌱 Creando datos semilla si no existen...");
+    
+    // ✅ CREAR PROFESORES SOLO SI NO EXISTEN
+    if (!await context.Professors.AnyAsync())
+    {
+        appLogger.LogInformation("👨‍🏫 Creando profesores...");
+        await context.SaveChangesAsync(); // Esto ejecuta el seed data de profesores/cursos
+    }
 
-    appLogger.LogInformation("🆕 Creando nueva estructura de base de datos...");
-    await context.Database.EnsureCreatedAsync();
-
-    appLogger.LogInformation("🌱 Creando datos semilla...");
-    await context.SaveChangesAsync();
-
+    // ✅ CREAR USUARIO ADMIN SOLO SI NO EXISTE
     appLogger.LogInformation("👤 Verificando usuario admin...");
     var existingAdmin = await context.Users.FirstOrDefaultAsync(u => u.Username == "admin");
 
@@ -144,31 +149,23 @@ try
 
         context.Users.Add(adminUser);
         await context.SaveChangesAsync();
-        appLogger.LogInformation("✅ Usuario admin creado exitosamente: admin/123");
-
-        var verifyAdmin = await context.Users.FirstOrDefaultAsync(u => u.Username == "admin");
-        if (verifyAdmin != null)
-        {
-            appLogger.LogInformation("✅ Verificación: Usuario admin encontrado con ID: {Id}", verifyAdmin.Id);
-        }
-        else
-        {
-            appLogger.LogError("❌ Error: Usuario admin no se pudo verificar después de crearlo");
-        }
+        appLogger.LogInformation("✅ Usuario admin creado: admin/123");
     }
     else
     {
         appLogger.LogInformation("✅ Usuario admin ya existe con ID: {Id}", existingAdmin.Id);
     }
 
+    // ✅ MOSTRAR ESTADÍSTICAS SIN ELIMINAR DATOS
     var userCount = await context.Users.CountAsync();
+    var studentCount = await context.Students.CountAsync();
     var professorCount = await context.Professors.CountAsync();
     var courseCount = await context.Courses.CountAsync();
 
-    appLogger.LogInformation("📊 Estadísticas de BD: Users={UserCount}, Professors={ProfessorCount}, Courses={CourseCount}",
-        userCount, professorCount, courseCount);
+    appLogger.LogInformation("📊 BD configurada - Users: {Users}, Students: {Students}, Professors: {Professors}, Courses: {Courses}", 
+        userCount, studentCount, professorCount, courseCount);
 
-    appLogger.LogInformation("✅ Base de datos configurada correctamente");
+    appLogger.LogInformation("✅ Base de datos configurada - DATOS PRESERVADOS");
 }
 catch (Exception ex)
 {

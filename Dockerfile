@@ -1,36 +1,38 @@
-# Usar imagen base de .NET 8
+ï»¿# Usar imagen base de .NET 8
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
 WORKDIR /app
+EXPOSE 80
+EXPOSE 443
 
-# Railway usa puerto dinámico
-ENV PORT=8080
-EXPOSE $PORT
+# âœ… CONFIGURAR UTF-8 EN CONTAINER
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
 
 # Imagen para build
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
+# âœ… CONFIGURAR UTF-8 EN BUILD
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+
 # Copiar archivos de proyecto y restaurar dependencias
 COPY ["StudentRegistration.Api/StudentRegistration.Api.csproj", "StudentRegistration.Api/"]
 RUN dotnet restore "StudentRegistration.Api/StudentRegistration.Api.csproj"
 
-# Copiar todo el código fuente
+# Copiar todo el cÃ³digo fuente
 COPY . .
 WORKDIR "/src/StudentRegistration.Api"
 
 # Build del proyecto
 RUN dotnet build "StudentRegistration.Api.csproj" -c Release -o /app/build
 
-# Publicar la aplicación
+# Publicar la aplicaciÃ³n
 FROM build AS publish
-RUN dotnet publish "StudentRegistration.Api.csproj" -c Release -o /app/publish /p:UseAppHost=false
+RUN dotnet publish "StudentRegistration.Api.csproj" -c Release -o /app/publish
 
 # Imagen final
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
-
-# Railway usa variable PORT
-ENV ASPNETCORE_URLS=http://+:$PORT
-
 ENTRYPOINT ["dotnet", "StudentRegistration.Api.dll"]

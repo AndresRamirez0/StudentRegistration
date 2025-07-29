@@ -4,6 +4,12 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- ✅ CONFIGURACIÓN UTF-8 -->
+    <LangVersion>latest</LangVersion>
+    <RunCodeAnalysis>false</RunCodeAnalysis>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <Utf8Output>true</Utf8Output>
+    <FileEncoding>UTF-8</FileEncoding>
   </PropertyGroup>
 
   <ItemGroup>

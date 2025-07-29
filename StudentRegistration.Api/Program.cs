@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using StudentRegistration.Api.Data;
 using StudentRegistration.Api.Services;
+using StudentRegistration.Api.Models.Entities; // ✅ AGREGAR ESTA LÍNEA
 using FluentValidation;
 using FluentValidation.AspNetCore;
 using System.Reflection;
@@ -8,6 +9,10 @@ using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+
+// ✅ CONFIGURACIÓN UTF-8 AL INICIO
+Console.OutputEncoding = Encoding.UTF8;
+Console.InputEncoding = Encoding.UTF8;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,7 +25,15 @@ builder.Services.AddControllers()
     {
         options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
         options.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+        // ✅ CONFIGURACIÓN UTF-8 PARA JSON
+        options.JsonSerializerOptions.Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
     });
+
+// ✅ CONFIGURACIÓN UTF-8 PARA RESPUESTAS HTTP
+builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =>
+{
+    options.SerializerOptions.Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
+});
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -73,13 +86,15 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
     {
         // Convertir URL de Railway MySQL
         var uri = new Uri(connectionString);
-        var mysqlConnection = $"Server={uri.Host};Port={uri.Port};Database={uri.LocalPath.TrimStart('/')};Uid={uri.UserInfo.Split(':')[0]};Pwd={uri.UserInfo.Split(':')[1]};SslMode=Required;";
+        var mysqlConnection = $"Server={uri.Host};Port={uri.Port};Database={uri.LocalPath.TrimStart('/')};Uid={uri.UserInfo.Split(':')[0]};Pwd={uri.UserInfo.Split(':')[1]};SslMode=Required;Charset=utf8mb4;";
+        // ✅ CONFIGURACIÓN UTF-8 SIMPLIFICADA (SIN CharSetBehavior)
         options.UseMySql(mysqlConnection, ServerVersion.AutoDetect(mysqlConnection));
     }
     else if (connectionString.Contains("Server=") || connectionString.Contains("server="))
     {
-        // Cadena MySQL directa
-        options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString));
+        // Cadena MySQL directa con charset UTF-8
+        var updatedConnectionString = connectionString.Contains("Charset=") ? connectionString : connectionString + ";Charset=utf8mb4;";
+        options.UseMySql(updatedConnectionString, ServerVersion.AutoDetect(updatedConnectionString));
     }
     else
     {
@@ -157,10 +172,31 @@ try
     appLogger.LogInformation("🆕 Creando nueva estructura de base de datos...");
     await context.Database.EnsureCreatedAsync();
     
-    appLogger.LogInformation("🌱 Creando datos semilla (incluye usuario admin)...");
+    appLogger.LogInformation("🌱 Creando datos semilla...");
     await context.SaveChangesAsync();
     
-    appLogger.LogInformation("✅ Base de datos Railway MySQL recreada con autenticación");
+    // ✅ CREAR USUARIO ADMIN DINÁMICAMENTE SI NO EXISTE
+    if (!await context.Users.AnyAsync(u => u.Username == "admin"))
+    {
+        appLogger.LogInformation("👤 Creando usuario administrador...");
+        var adminUser = new User
+        {
+            Username = "admin",
+            Email = "admin@university.edu",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("admin123"),
+            FirstName = "Sistema",
+            LastName = "Administrador",
+            Role = "Admin",
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        };
+        
+        context.Users.Add(adminUser);
+        await context.SaveChangesAsync();
+        appLogger.LogInformation("✅ Usuario administrador creado: admin/admin123");
+    }
+    
+    appLogger.LogInformation("✅ Base de datos Railway MySQL configurada con UTF-8");
 }
 catch (Exception ex)
 {
@@ -199,7 +235,8 @@ app.MapGet("/health", async (ApplicationDbContext context) =>
             platform = "Railway.app",
             port = port,
             database = canConnect ? "connected" : "disconnected",
-            connectionType = connectionType
+            connectionType = connectionType,
+            encoding = "UTF-8"
         });
     }
     catch (Exception ex)
@@ -226,13 +263,16 @@ app.MapGet("/debug", () => Results.Ok(new {
     mysqlUser = Environment.GetEnvironmentVariable("MYSQLUSER") ?? "Not set",
     mysqlDatabase = Environment.GetEnvironmentVariable("MYSQL_DATABASE") ?? "Not set",
     defaultConnection = builder.Configuration.GetConnectionString("Default") ?? "Not set",
-    finalConnection = connectionString.Length > 50 ? connectionString.Substring(0, 50) + "..." : connectionString
+    finalConnection = connectionString.Length > 50 ? connectionString.Substring(0, 50) + "..." : connectionString,
+    encoding = Encoding.Default.EncodingName,
+    consoleEncoding = Console.OutputEncoding.EncodingName
 }));
 
 app.MapGet("/info", () => Results.Ok(new {
     api = "Student Registration API",
     version = "1.0.0",
     platform = "Railway.app",
+    encoding = "UTF-8",
     endpoints = new {
         swagger = "/",
         health = "/health",
@@ -266,7 +306,8 @@ app.MapGet("/test/auth-status", async (ApplicationDbContext context) =>
                 courses = await context.Courses.CountAsync(),
                 studentCourses = await context.StudentCourses.CountAsync()
             },
-            timestamp = DateTime.UtcNow
+            timestamp = DateTime.UtcNow,
+            encoding = "UTF-8"
         });
     }
     catch (Exception ex)
@@ -279,7 +320,22 @@ app.MapGet("/test/auth-status", async (ApplicationDbContext context) =>
     }
 });
 
-appLogger.LogInformation("🚀 Iniciando Student Registration API con autenticación en Railway - Puerto: {Port}", port);
+// ✅ ENDPOINT PARA PROBAR CARACTERES UTF-8
+app.MapGet("/test/utf8", () => Results.Ok(new {
+    message = "Prueba de caracteres UTF-8",
+    caracteres = new {
+        acentos = "áéíóúñü",
+        mayusculas = "ÁÉÍÓÚÑÜ",
+        simbolos = "¡¿©®™€£¥",
+        emojis = "🚀✅❌🔧📋",
+        nombres = new[] { "José", "María", "Ángel", "Niño" },
+        materias = new[] { "Matemáticas", "Física", "Química", "Programación" }
+    },
+    encoding = "UTF-8",
+    timestamp = DateTime.UtcNow
+}));
+
+appLogger.LogInformation("🚀 Iniciando Student Registration API con UTF-8 en Railway - Puerto: {Port}", port);
 
 app.Run();
 

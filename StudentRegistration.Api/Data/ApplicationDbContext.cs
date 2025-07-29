@@ -19,6 +19,18 @@ namespace StudentRegistration.Api.Data
         {
             base.OnModelCreating(modelBuilder);
 
+            // ✅ CONFIGURACIÓN UTF-8 PARA TODAS LAS STRING PROPERTIES
+            foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+            {
+                foreach (var property in entityType.GetProperties())
+                {
+                    if (property.ClrType == typeof(string))
+                    {
+                        property.SetCollation("utf8mb4_unicode_ci");
+                    }
+                }
+            }
+
             // Configuración de relaciones
             modelBuilder.Entity<StudentCourse>()
                 .HasOne(sc => sc.Student)

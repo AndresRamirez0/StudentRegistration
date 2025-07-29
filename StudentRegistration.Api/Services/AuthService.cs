@@ -44,7 +44,6 @@ namespace StudentRegistration.Api.Services
                 IsAuthenticated = true,
                 User = userDto,
                 Message = "Login exitoso"
-                // ❌ ELIMINAR Debug - no existe en SimpleLoginResponseDto
             };
         }
 

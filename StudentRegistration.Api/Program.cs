@@ -5,9 +5,9 @@ using FluentValidation;
 using FluentValidation.AspNetCore;
 using System.Reflection;
 using System.Text.Json.Serialization;
-using Microsoft.AspNetCore.Authentication.JwtBearer; // ✅ NUEVO
-using Microsoft.IdentityModel.Tokens; // ✅ NUEVO
-using System.Text; // ✅ NUEVO
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -121,7 +121,7 @@ builder.Services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
 builder.Services.AddScoped<IStudentService, StudentService>();
 builder.Services.AddScoped<ICourseService, CourseService>();
 builder.Services.AddScoped<IProfessorService, ProfessorService>();
-builder.Services.AddScoped<IAuthService, AuthService>(); // ✅ NUEVO
+builder.Services.AddScoped<IAuthService, AuthService>();
 
 // CORS
 builder.Services.AddCors(options =>
@@ -237,11 +237,47 @@ app.MapGet("/info", () => Results.Ok(new {
         swagger = "/",
         health = "/health",
         debug = "/debug",
+        authStatus = "/test/auth-status",
         students = "/api/students",
         courses = "/api/courses",
-        professors = "/api/professors"
+        professors = "/api/professors",
+        auth = "/api/auth"
     }
 }));
+
+// ✅ ENDPOINT TEMPORAL PARA VERIFICAR ESTADO DE AUTENTICACIÓN
+app.MapGet("/test/auth-status", async (ApplicationDbContext context) => 
+{
+    try
+    {
+        var usersCount = await context.Users.CountAsync();
+        var adminUser = await context.Users.FirstOrDefaultAsync(u => u.Username == "admin");
+        
+        return Results.Ok(new { 
+            totalUsers = usersCount,
+            adminExists = adminUser != null,
+            adminEmail = adminUser?.Email ?? "N/A",
+            adminRole = adminUser?.Role ?? "N/A",
+            adminCreatedAt = adminUser?.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss") ?? "N/A",
+            databaseTables = new {
+                users = await context.Users.CountAsync(),
+                students = await context.Students.CountAsync(),
+                professors = await context.Professors.CountAsync(),
+                courses = await context.Courses.CountAsync(),
+                studentCourses = await context.StudentCourses.CountAsync()
+            },
+            timestamp = DateTime.UtcNow
+        });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { 
+            error = ex.Message,
+            stackTrace = ex.StackTrace,
+            timestamp = DateTime.UtcNow
+        });
+    }
+});
 
 appLogger.LogInformation("🚀 Iniciando Student Registration API con autenticación en Railway - Puerto: {Port}", port);
 

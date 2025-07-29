@@ -180,7 +180,7 @@ app.UseCors("AllowAll");
 
 app.MapControllers();
 
-// ✅ ENDPOINTS DE DEBUGGING SIN TIPOS COMPLEJOS
+// ✅ ENDPOINTS DE DEBUGGING
 app.MapGet("/health", async (ApplicationDbContext context) =>
 {
     try
@@ -241,6 +241,95 @@ app.MapGet("/test/auth-status", async (ApplicationDbContext context) =>
     }
 });
 
+// ✅ ENDPOINT PARA VERIFICAR ESTUDIANTES VS USUARIOS
+app.MapGet("/test/students-vs-users", async (ApplicationDbContext context) =>
+{
+    try
+    {
+        var allUsers = await context.Users
+            .Where(u => u.IsActive)
+            .Select(u => new { u.Id, u.Username, u.Role, u.StudentId, u.Email })
+            .ToListAsync();
+
+        var allStudents = await context.Students
+            .Select(s => new { s.Id, s.FirstName, s.LastName, s.Email, s.StudentCode })
+            .ToListAsync();
+
+        var usersWithStudentRole = allUsers.Where(u =>
+            u.Role.Equals("Student", StringComparison.OrdinalIgnoreCase) ||
+            u.Role.Equals("student", StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrEmpty(u.Role)).ToList();
+
+        var usersWithoutStudentRecord = usersWithStudentRole.Where(u => u.StudentId == null).ToList();
+
+        return Results.Ok(new
+        {
+            totalUsers = allUsers.Count,
+            totalStudents = allStudents.Count,
+            usersWithStudentRole = usersWithStudentRole.Count,
+            usersWithoutStudentRecord = usersWithoutStudentRecord.Count,
+            problemUsers = usersWithoutStudentRecord,
+            allStudents = allStudents,
+            allUsers = allUsers
+        });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+// ✅ ENDPOINT PARA MIGRAR USUARIOS EXISTENTES A ESTUDIANTES
+app.MapPost("/admin/migrate-students", async (ApplicationDbContext context) =>
+{
+    try
+    {
+        // Buscar usuarios que deberían ser estudiantes pero no tienen registro Student
+        var usersToMigrate = await context.Users
+            .Where(u => u.IsActive &&
+                       (u.Role.ToLower() == "student" || u.Role == "") &&
+                       u.StudentId == null)
+            .ToListAsync();
+
+        var migratedCount = 0;
+
+        foreach (var user in usersToMigrate)
+        {
+            // Crear registro Student
+            var student = new Student
+            {
+                FirstName = user.FirstName,
+                LastName = user.LastName,
+                Email = user.Email,
+                StudentCode = await GenerateStudentCodeAsync(context),
+                RegistrationDate = user.CreatedAt,
+                TotalCredits = 0
+            };
+
+            context.Students.Add(student);
+            await context.SaveChangesAsync();
+
+            // Actualizar usuario
+            user.StudentId = student.Id;
+            user.Role = "Student"; // Normalizar rol
+            migratedCount++;
+        }
+
+        await context.SaveChangesAsync();
+
+        return Results.Ok(new
+        {
+            message = $"Migración completada: {migratedCount} usuarios migrados a estudiantes",
+            migratedCount = migratedCount,
+            migratedUsers = usersToMigrate.Select(u => new { u.Id, u.Username, u.Email }).ToList()
+        });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
 // ✅ ENDPOINT PARA RECREAR USUARIO ADMIN
 app.MapPost("/admin/recreate-admin", async (ApplicationDbContext context) =>
 {
@@ -287,3 +376,15 @@ app.MapPost("/admin/recreate-admin", async (ApplicationDbContext context) =>
 app.Run();
 
 public partial class Program { }
+
+// ✅ FUNCIÓN HELPER PARA GENERAR CÓDIGOS DE ESTUDIANTE
+static async Task<string> GenerateStudentCodeAsync(ApplicationDbContext context)
+{
+    string studentCode;
+    do
+    {
+        studentCode = "STU" + DateTime.Now.Year + Random.Shared.Next(1000, 9999);
+    } while (await context.Students.AnyAsync(s => s.StudentCode == studentCode));
+
+    return studentCode;
+}

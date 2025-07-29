@@ -59,8 +59,6 @@ namespace StudentRegistration.Api.Services
                 };
             }
 
-            // ✅ SIN VALIDACIÓN DE LONGITUD DE CONTRASEÑA - ACEPTA CUALQUIER CONTRASEÑA
-            // Simplemente verificar que no esté vacía
             if (string.IsNullOrWhiteSpace(registerDto.Password))
             {
                 return new AuthResponseDto
@@ -70,20 +68,37 @@ namespace StudentRegistration.Api.Services
                 };
             }
 
+            // ✅ NORMALIZAR EL ROL PARA CONSISTENCIA
+            var normalizedRole = string.IsNullOrWhiteSpace(registerDto.Role) ? "Student" : registerDto.Role.Trim();
+            
+            // ✅ NORMALIZAR A FORMATO CORRECTO (Primera letra mayúscula)
+            if (normalizedRole.Equals("student", StringComparison.OrdinalIgnoreCase))
+            {
+                normalizedRole = "Student";
+            }
+            else if (normalizedRole.Equals("professor", StringComparison.OrdinalIgnoreCase))
+            {
+                normalizedRole = "Professor";
+            }
+            else if (normalizedRole.Equals("admin", StringComparison.OrdinalIgnoreCase))
+            {
+                normalizedRole = "Admin";
+            }
+
             var user = new User
             {
                 Username = registerDto.Username,
                 Email = registerDto.Email,
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword(registerDto.Password), // ✅ ACEPTA CUALQUIER CONTRASEÑA
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(registerDto.Password),
                 FirstName = registerDto.FirstName,
                 LastName = registerDto.LastName,
-                Role = registerDto.Role,
+                Role = normalizedRole, // ✅ USAR ROL NORMALIZADO
                 CreatedAt = DateTime.UtcNow,
                 IsActive = true
             };
 
-            // Si es estudiante, crear también el registro de Student
-            if (registerDto.Role == "Student")
+            // ✅ CREAR REGISTRO STUDENT PARA CUALQUIER VARIACIÓN DE "STUDENT"
+            if (normalizedRole.Equals("Student", StringComparison.OrdinalIgnoreCase))
             {
                 var student = new Student
                 {

@@ -146,16 +146,21 @@ try
     var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     
     appLogger.LogInformation("🔄 Configurando base de datos Railway MySQL...");
+    appLogger.LogInformation("🔗 Connection String Type: {Type}", 
+        connectionString.StartsWith("mysql://") ? "Railway MySQL URL" : 
+        connectionString.Contains("Server=") ? "MySQL Direct" : "SQLite");
     
+    // ✅ FORZAR RECREACIÓN PARA AGREGAR TABLA USERS
+    appLogger.LogInformation("🗑️ Eliminando base de datos existente...");
+    await context.Database.EnsureDeletedAsync();
+    
+    appLogger.LogInformation("🆕 Creando nueva estructura de base de datos...");
     await context.Database.EnsureCreatedAsync();
     
-    if (!await context.Professors.AnyAsync())
-    {
-        appLogger.LogInformation("🌱 Creando datos semilla...");
-        await context.SaveChangesAsync();
-    }
+    appLogger.LogInformation("🌱 Creando datos semilla (incluye usuario admin)...");
+    await context.SaveChangesAsync();
     
-    appLogger.LogInformation("✅ Base de datos configurada correctamente");
+    appLogger.LogInformation("✅ Base de datos Railway MySQL recreada con autenticación");
 }
 catch (Exception ex)
 {

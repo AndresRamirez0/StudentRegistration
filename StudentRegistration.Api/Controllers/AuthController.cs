@@ -1,8 +1,6 @@
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StudentRegistration.Api.Models.DTOs;
 using StudentRegistration.Api.Services;
-using System.Security.Claims;
 
 namespace StudentRegistration.Api.Controllers
 {
@@ -18,28 +16,34 @@ namespace StudentRegistration.Api.Controllers
         }
 
         /// <summary>
-        /// Iniciar sesión
+        /// Iniciar sesión simple (sin token)
         /// </summary>
         [HttpPost("login")]
-        public async Task<ActionResult<AuthResponseDto>> Login(LoginDto loginDto)
+        public async Task<ActionResult<SimpleLoginResponseDto>> Login(LoginDto loginDto)
         {
             try
             {
                 var response = await _authService.LoginAsync(loginDto);
+                
+                if (!response.IsAuthenticated)
+                {
+                    return BadRequest(response);
+                }
+
                 return Ok(response);
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return Unauthorized(new { message = ex.Message });
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new SimpleLoginResponseDto
+                {
+                    IsAuthenticated = false,
+                    Message = $"Error en el login: {ex.Message}"
+                });
             }
         }
 
         /// <summary>
-        /// Registrar nuevo usuario
+        /// Registrar nuevo usuario simple
         /// </summary>
         [HttpPost("register")]
         public async Task<ActionResult<AuthResponseDto>> Register(RegisterDto registerDto)
@@ -47,25 +51,34 @@ namespace StudentRegistration.Api.Controllers
             try
             {
                 var response = await _authService.RegisterAsync(registerDto);
-                return CreatedAtAction(nameof(GetProfile), null, response);
+                
+                if (!response.Success)
+                {
+                    return BadRequest(response);
+                }
+
+                return CreatedAtAction(nameof(GetUserByUsername), 
+                    new { username = registerDto.Username }, response);
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = ex.Message });
+                return BadRequest(new AuthResponseDto
+                {
+                    Success = false,
+                    Message = $"Error en el registro: {ex.Message}"
+                });
             }
         }
 
         /// <summary>
-        /// Obtener perfil del usuario actual
+        /// Obtener usuario por nombre de usuario
         /// </summary>
-        [HttpGet("profile")]
-        [Authorize]
-        public async Task<ActionResult<UserDto>> GetProfile()
+        [HttpGet("user/{username}")]
+        public async Task<ActionResult<UserDto>> GetUserByUsername(string username)
         {
             try
             {
-                var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
-                var user = await _authService.GetUserByIdAsync(userId);
+                var user = await _authService.GetUserByUsernameAsync(username);
                 
                 if (user == null)
                     return NotFound(new { message = "Usuario no encontrado" });
@@ -79,25 +92,19 @@ namespace StudentRegistration.Api.Controllers
         }
 
         /// <summary>
-        /// Cambiar contraseña
+        /// Cambiar contraseña (requiere ID de usuario)
         /// </summary>
-        [HttpPost("change-password")]
-        [Authorize]
-        public async Task<ActionResult> ChangePassword(ChangePasswordDto changePasswordDto)
+        [HttpPost("change-password/{userId}")]
+        public async Task<ActionResult> ChangePassword(int userId, ChangePasswordDto changePasswordDto)
         {
             try
             {
-                var userId = int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0");
                 var result = await _authService.ChangePasswordAsync(userId, changePasswordDto);
                 
                 if (!result)
-                    return NotFound(new { message = "Usuario no encontrado" });
+                    return BadRequest(new { message = "Contraseña actual incorrecta o usuario no encontrado" });
 
                 return Ok(new { message = "Contraseña cambiada exitosamente" });
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return Unauthorized(new { message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -106,18 +113,24 @@ namespace StudentRegistration.Api.Controllers
         }
 
         /// <summary>
-        /// Verificar si el token es válido
+        /// Validar credenciales
         /// </summary>
-        [HttpGet("verify")]
-        [Authorize]
-        public ActionResult VerifyToken()
+        [HttpPost("validate")]
+        public async Task<ActionResult> ValidateCredentials(LoginDto loginDto)
         {
-            return Ok(new { 
-                valid = true, 
-                userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
-                username = User.FindFirst(ClaimTypes.Name)?.Value,
-                role = User.FindFirst(ClaimTypes.Role)?.Value
-            });
+            try
+            {
+                var isValid = await _authService.ValidateUserAsync(loginDto.Username, loginDto.Password);
+                
+                return Ok(new { 
+                    isValid = isValid, 
+                    message = isValid ? "Credenciales válidas" : "Credenciales inválidas" 
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
         }
     }
 }

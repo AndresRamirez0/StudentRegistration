@@ -1,5 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using StudentRegistration.Api.Models.DTOs;
 using StudentRegistration.Api.Services;
 
@@ -7,7 +6,7 @@ namespace StudentRegistration.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize] // ✅ PROTEGER TODO EL CONTROLADOR
+    // ✅ SIN [Authorize] - ACCESO LIBRE
     public class StudentsController : ControllerBase
     {
         private readonly IStudentService _studentService;
@@ -21,7 +20,6 @@ namespace StudentRegistration.Api.Controllers
         /// Obtener todos los estudiantes
         /// </summary>
         [HttpGet]
-        [Authorize(Roles = "Admin,Professor")] // ✅ Solo Admin y Profesores
         public async Task<ActionResult<IEnumerable<StudentDto>>> GetAllStudents()
         {
             try
@@ -59,7 +57,6 @@ namespace StudentRegistration.Api.Controllers
         /// Crear nuevo estudiante
         /// </summary>
         [HttpPost]
-        [Authorize(Roles = "Admin")] // ✅ Solo Admin puede crear estudiantes
         public async Task<ActionResult<StudentDto>> CreateStudent(CreateStudentDto createStudentDto)
         {
             try

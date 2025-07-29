@@ -1,13 +1,8 @@
-using AutoMapper;
-using BCrypt.Net;
+﻿using AutoMapper;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.IdentityModel.Tokens;
 using StudentRegistration.Api.Data;
 using StudentRegistration.Api.Models.DTOs;
 using StudentRegistration.Api.Models.Entities;
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text;
 
 namespace StudentRegistration.Api.Services
 {
@@ -15,16 +10,14 @@ namespace StudentRegistration.Api.Services
     {
         private readonly ApplicationDbContext _context;
         private readonly IMapper _mapper;
-        private readonly IConfiguration _configuration;
 
-        public AuthService(ApplicationDbContext context, IMapper mapper, IConfiguration configuration)
+        public AuthService(ApplicationDbContext context, IMapper mapper)
         {
             _context = context;
             _mapper = mapper;
-            _configuration = configuration;
         }
 
-        public async Task<AuthResponseDto> LoginAsync(LoginDto loginDto)
+        public async Task<SimpleLoginResponseDto> LoginAsync(LoginDto loginDto)
         {
             var user = await _context.Users
                 .Include(u => u.Student)
@@ -32,20 +25,25 @@ namespace StudentRegistration.Api.Services
                 .FirstOrDefaultAsync(u => u.Username == loginDto.Username && u.IsActive);
 
             if (user == null || !BCrypt.Net.BCrypt.Verify(loginDto.Password, user.PasswordHash))
-                throw new UnauthorizedAccessException("Usuario o contrase�a incorrectos");
+            {
+                return new SimpleLoginResponseDto
+                {
+                    IsAuthenticated = false,
+                    Message = "Usuario o contraseña incorrectos"
+                };
+            }
 
-            // Actualizar �ltimo login
+            // Actualizar último login
             user.LastLoginAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
             var userDto = _mapper.Map<UserDto>(user);
-            var token = GenerateJwtToken(userDto);
 
-            return new AuthResponseDto
+            return new SimpleLoginResponseDto
             {
-                Token = token,
-                ExpiresAt = DateTime.UtcNow.AddHours(24),
-                User = userDto
+                IsAuthenticated = true,
+                User = userDto,
+                Message = "Login exitoso"
             };
         }
 
@@ -53,13 +51,30 @@ namespace StudentRegistration.Api.Services
         {
             // Verificar si ya existe el usuario
             if (await UserExistsAsync(registerDto.Username, registerDto.Email))
-                throw new InvalidOperationException("El usuario o email ya existe");
+            {
+                return new AuthResponseDto
+                {
+                    Success = false,
+                    Message = "El usuario o email ya existe"
+                };
+            }
+
+            // ✅ SIN VALIDACIÓN DE LONGITUD DE CONTRASEÑA - ACEPTA CUALQUIER CONTRASEÑA
+            // Simplemente verificar que no esté vacía
+            if (string.IsNullOrWhiteSpace(registerDto.Password))
+            {
+                return new AuthResponseDto
+                {
+                    Success = false,
+                    Message = "La contraseña no puede estar vacía"
+                };
+            }
 
             var user = new User
             {
                 Username = registerDto.Username,
                 Email = registerDto.Email,
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword(registerDto.Password),
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(registerDto.Password), // ✅ ACEPTA CUALQUIER CONTRASEÑA
                 FirstName = registerDto.FirstName,
                 LastName = registerDto.LastName,
                 Role = registerDto.Role,
@@ -67,7 +82,7 @@ namespace StudentRegistration.Api.Services
                 IsActive = true
             };
 
-            // Si es estudiante, crear tambi�n el registro de Student
+            // Si es estudiante, crear también el registro de Student
             if (registerDto.Role == "Student")
             {
                 var student = new Student
@@ -90,12 +105,11 @@ namespace StudentRegistration.Api.Services
             await _context.SaveChangesAsync();
 
             var userDto = _mapper.Map<UserDto>(user);
-            var token = GenerateJwtToken(userDto);
 
             return new AuthResponseDto
             {
-                Token = token,
-                ExpiresAt = DateTime.UtcNow.AddHours(24),
+                Success = true,
+                Message = "Usuario registrado exitosamente",
                 User = userDto
             };
         }
@@ -110,13 +124,28 @@ namespace StudentRegistration.Api.Services
             return user == null ? null : _mapper.Map<UserDto>(user);
         }
 
+        public async Task<UserDto?> GetUserByUsernameAsync(string username)
+        {
+            var user = await _context.Users
+                .Include(u => u.Student)
+                .Include(u => u.Professor)
+                .FirstOrDefaultAsync(u => u.Username == username && u.IsActive);
+
+            return user == null ? null : _mapper.Map<UserDto>(user);
+        }
+
         public async Task<bool> ChangePasswordAsync(int userId, ChangePasswordDto changePasswordDto)
         {
             var user = await _context.Users.FindAsync(userId);
             if (user == null) return false;
 
             if (!BCrypt.Net.BCrypt.Verify(changePasswordDto.CurrentPassword, user.PasswordHash))
-                throw new UnauthorizedAccessException("Contrase�a actual incorrecta");
+                return false;
+
+            // ✅ SIN VALIDACIÓN DE NUEVA CONTRASEÑA - ACEPTA CUALQUIER CONTRASEÑA
+            // Solo verificar que no esté vacía
+            if (string.IsNullOrWhiteSpace(changePasswordDto.NewPassword))
+                return false;
 
             user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(changePasswordDto.NewPassword);
             await _context.SaveChangesAsync();
@@ -130,30 +159,12 @@ namespace StudentRegistration.Api.Services
                 .AnyAsync(u => u.Username == username || u.Email == email);
         }
 
-        public string GenerateJwtToken(UserDto user)
+        public async Task<bool> ValidateUserAsync(string username, string password)
         {
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"] ?? "StudentRegistrationSecretKey123456789"));
-            var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+            var user = await _context.Users
+                .FirstOrDefaultAsync(u => u.Username == username && u.IsActive);
 
-            var claims = new List<Claim>
-            {
-                new(ClaimTypes.NameIdentifier, user.Id.ToString()),
-                new(ClaimTypes.Name, user.Username),
-                new(ClaimTypes.Email, user.Email),
-                new(ClaimTypes.Role, user.Role),
-                new("firstName", user.FirstName),
-                new("lastName", user.LastName)
-            };
-
-            var token = new JwtSecurityToken(
-                issuer: _configuration["Jwt:Issuer"] ?? "StudentRegistrationAPI",
-                audience: _configuration["Jwt:Audience"] ?? "StudentRegistrationClient",
-                claims: claims,
-                expires: DateTime.UtcNow.AddHours(24),
-                signingCredentials: credentials
-            );
-
-            return new JwtSecurityTokenHandler().WriteToken(token);
+            return user != null && BCrypt.Net.BCrypt.Verify(password, user.PasswordHash);
         }
 
         private async Task<string> GenerateStudentCodeAsync()

@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace StudentRegistration.Api.Models.DTOs
 {
@@ -22,7 +22,7 @@ namespace StudentRegistration.Api.Models.DTOs
         public string Email { get; set; } = string.Empty;
         
         [Required]
-        [StringLength(100, MinimumLength = 6)]
+        // ✅ SIN RESTRICCIONES DE LONGITUD EN CONTRASEÑA
         public string Password { get; set; } = string.Empty;
         
         [Required]
@@ -36,9 +36,9 @@ namespace StudentRegistration.Api.Models.DTOs
 
     public class AuthResponseDto
     {
-        public string Token { get; set; } = string.Empty;
-        public DateTime ExpiresAt { get; set; }
-        public UserDto User { get; set; } = new UserDto();
+        public bool Success { get; set; }
+        public string Message { get; set; } = string.Empty;
+        public UserDto? User { get; set; }
     }
 
     public class UserDto
@@ -59,7 +59,14 @@ namespace StudentRegistration.Api.Models.DTOs
         public string CurrentPassword { get; set; } = string.Empty;
         
         [Required]
-        [StringLength(100, MinimumLength = 6)]
+        // ✅ SIN RESTRICCIONES DE LONGITUD EN NUEVA CONTRASEÑA
         public string NewPassword { get; set; } = string.Empty;
+    }
+
+    public class SimpleLoginResponseDto
+    {
+        public bool IsAuthenticated { get; set; }
+        public UserDto? User { get; set; }
+        public string Message { get; set; } = string.Empty;
     }
 }

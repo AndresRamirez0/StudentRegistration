@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+Ôªøusing Microsoft.EntityFrameworkCore;
 using StudentRegistration.Api.Models.Entities;
 
 namespace StudentRegistration.Api.Data
@@ -13,12 +13,13 @@ namespace StudentRegistration.Api.Data
         public DbSet<Course> Courses { get; set; }
         public DbSet<Professor> Professors { get; set; }
         public DbSet<StudentCourse> StudentCourses { get; set; }
+        public DbSet<User> Users { get; set; } // ‚úÖ NUEVA TABLA
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
 
-            // ConfiguraciÛn de relaciones
+            // Configuraci√≥n de relaciones
             modelBuilder.Entity<StudentCourse>()
                 .HasOne(sc => sc.Student)
                 .WithMany(s => s.StudentCourses)
@@ -37,7 +38,7 @@ namespace StudentRegistration.Api.Data
                 .HasForeignKey(c => c.ProfessorId)
                 .OnDelete(DeleteBehavior.Restrict);
 
-            // Õndices ˙nicos
+            // √çndices √∫nicos
             modelBuilder.Entity<Student>()
                 .HasIndex(s => s.Email)
                 .IsUnique();
@@ -50,31 +51,70 @@ namespace StudentRegistration.Api.Data
                 .HasIndex(p => p.Email)
                 .IsUnique();
 
-            // RestricciÛn ˙nica para evitar doble inscripciÛn
+            // Restricci√≥n √∫nica para evitar doble inscripci√≥n
             modelBuilder.Entity<StudentCourse>()
                 .HasIndex(sc => new { sc.StudentId, sc.CourseId })
                 .IsUnique();
 
+            // ‚úÖ NUEVAS CONFIGURACIONES PARA USERS
+            modelBuilder.Entity<User>()
+                .HasIndex(u => u.Username)
+                .IsUnique();
+
+            modelBuilder.Entity<User>()
+                .HasIndex(u => u.Email)
+                .IsUnique();
+
+            // Relaci√≥n User -> Student (opcional)
+            modelBuilder.Entity<User>()
+                .HasOne(u => u.Student)
+                .WithOne()
+                .HasForeignKey<User>(u => u.StudentId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            // Relaci√≥n User -> Professor (opcional)
+            modelBuilder.Entity<User>()
+                .HasOne(u => u.Professor)
+                .WithOne()
+                .HasForeignKey<User>(u => u.ProfessorId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            // ‚úÖ SEED DATA - Usuario administrador por defecto
+            modelBuilder.Entity<User>().HasData(
+                new User
+                {
+                    Id = 1,
+                    Username = "admin",
+                    Email = "admin@university.edu",
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("admin123"),
+                    FirstName = "Sistema",
+                    LastName = "Administrador",
+                    Role = "Admin",
+                    CreatedAt = DateTime.UtcNow,
+                    IsActive = true
+                }
+            );
+
             // Seed Data - 5 Profesores
             modelBuilder.Entity<Professor>().HasData(
-                new Professor { Id = 1, FirstName = "Ana", LastName = "GarcÌa", Email = "ana.garcia@university.edu", Department = "Matem·ticas" },
-                new Professor { Id = 2, FirstName = "Carlos", LastName = "LÛpez", Email = "carlos.lopez@university.edu", Department = "Ciencias" },
-                new Professor { Id = 3, FirstName = "MarÌa", LastName = "RodrÌguez", Email = "maria.rodriguez@university.edu", Department = "Humanidades" },
-                new Professor { Id = 4, FirstName = "JosÈ", LastName = "MartÌnez", Email = "jose.martinez@university.edu", Department = "IngenierÌa" },
-                new Professor { Id = 5, FirstName = "Laura", LastName = "Fern·ndez", Email = "laura.fernandez@university.edu", Department = "TecnologÌa" }
+                new Professor { Id = 1, FirstName = "Ana", LastName = "Garc√≠a", Email = "ana.garcia@university.edu", Department = "Matem√°ticas" },
+                new Professor { Id = 2, FirstName = "Carlos", LastName = "L√≥pez", Email = "carlos.lopez@university.edu", Department = "Ciencias" },
+                new Professor { Id = 3, FirstName = "Mar√≠a", LastName = "Rodr√≠guez", Email = "maria.rodriguez@university.edu", Department = "Humanidades" },
+                new Professor { Id = 4, FirstName = "Jos√©", LastName = "Mart√≠nez", Email = "jose.martinez@university.edu", Department = "Ingenier√≠a" },
+                new Professor { Id = 5, FirstName = "Laura", LastName = "Fern√°ndez", Email = "laura.fernandez@university.edu", Department = "Tecnolog√≠a" }
             );
 
             // Seed Data - 10 Materias (2 por profesor)
             modelBuilder.Entity<Course>().HasData(
-                new Course { Id = 1, Name = "¡lgebra Lineal", Description = "Fundamentos de ·lgebra lineal", Credits = 3, ProfessorId = 1 },
-                new Course { Id = 2, Name = "C·lculo Diferencial", Description = "IntroducciÛn al c·lculo diferencial", Credits = 3, ProfessorId = 1 },
-                new Course { Id = 3, Name = "FÌsica General", Description = "Principios b·sicos de fÌsica", Credits = 3, ProfessorId = 2 },
-                new Course { Id = 4, Name = "QuÌmica Org·nica", Description = "Estudio de compuestos org·nicos", Credits = 3, ProfessorId = 2 },
-                new Course { Id = 5, Name = "Literatura EspaÒola", Description = "An·lisis de textos literarios", Credits = 3, ProfessorId = 3 },
-                new Course { Id = 6, Name = "Historia Universal", Description = "Eventos histÛricos mundiales", Credits = 3, ProfessorId = 3 },
+                new Course { Id = 1, Name = "√Ålgebra Lineal", Description = "Fundamentos de √°lgebra lineal", Credits = 3, ProfessorId = 1 },
+                new Course { Id = 2, Name = "C√°lculo Diferencial", Description = "Introducci√≥n al c√°lculo diferencial", Credits = 3, ProfessorId = 1 },
+                new Course { Id = 3, Name = "F√≠sica General", Description = "Principios b√°sicos de f√≠sica", Credits = 3, ProfessorId = 2 },
+                new Course { Id = 4, Name = "Qu√≠mica Org√°nica", Description = "Estudio de compuestos org√°nicos", Credits = 3, ProfessorId = 2 },
+                new Course { Id = 5, Name = "Literatura Espa√±ola", Description = "An√°lisis de textos literarios", Credits = 3, ProfessorId = 3 },
+                new Course { Id = 6, Name = "Historia Universal", Description = "Eventos hist√≥ricos mundiales", Credits = 3, ProfessorId = 3 },
                 new Course { Id = 7, Name = "Estructuras de Datos", Description = "Algoritmos y estructuras fundamentales", Credits = 3, ProfessorId = 4 },
-                new Course { Id = 8, Name = "Bases de Datos", Description = "DiseÒo y gestiÛn de bases de datos", Credits = 3, ProfessorId = 4 },
-                new Course { Id = 9, Name = "ProgramaciÛn Web", Description = "Desarrollo de aplicaciones web", Credits = 3, ProfessorId = 5 },
+                new Course { Id = 8, Name = "Bases de Datos", Description = "Dise√±o y gesti√≥n de bases de datos", Credits = 3, ProfessorId = 4 },
+                new Course { Id = 9, Name = "Programaci√≥n Web", Description = "Desarrollo de aplicaciones web", Credits = 3, ProfessorId = 5 },
                 new Course { Id = 10, Name = "Redes de Computadores", Description = "Fundamentos de redes", Credits = 3, ProfessorId = 5 }
             );
         }

@@ -5,6 +5,9 @@ using FluentValidation;
 using FluentValidation.AspNetCore;
 using System.Reflection;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Authentication.JwtBearer; // ✅ NUEVO
+using Microsoft.IdentityModel.Tokens; // ✅ NUEVO
+using System.Text; // ✅ NUEVO
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,7 +28,35 @@ builder.Services.AddSwaggerGen(c =>
     c.SwaggerDoc("v1", new() { 
         Title = "Student Registration API", 
         Version = "v1",
-        Description = "API para el sistema de registro de estudiantes - Railway"
+        Description = "API para el sistema de registro de estudiantes con autenticación - Railway"
+    });
+    
+    // ✅ CONFIGURAR SWAGGER PARA JWT
+    c.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    {
+        Description = "JWT Authorization header usando Bearer scheme. Ejemplo: \"Authorization: Bearer {token}\"",
+        Name = "Authorization",
+        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.ApiKey,
+        Scheme = "Bearer"
+    });
+
+    c.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement()
+    {
+        {
+            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            {
+                Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                {
+                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                },
+                Scheme = "oauth2",
+                Name = "Bearer",
+                In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+            },
+            new List<string>()
+        }
     });
 });
 
@@ -57,6 +88,28 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
     }
 });
 
+// ✅ CONFIGURACIÓN JWT
+var jwtKey = Environment.GetEnvironmentVariable("JWT_KEY") ?? "StudentRegistrationSecretKey123456789";
+var jwtIssuer = Environment.GetEnvironmentVariable("JWT_ISSUER") ?? "StudentRegistrationAPI";
+var jwtAudience = Environment.GetEnvironmentVariable("JWT_AUDIENCE") ?? "StudentRegistrationClient";
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = jwtIssuer,
+            ValidAudience = jwtAudience,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
+        };
+    });
+
+builder.Services.AddAuthorization();
+
 // AutoMapper
 builder.Services.AddAutoMapper(Assembly.GetExecutingAssembly());
 
@@ -68,6 +121,7 @@ builder.Services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
 builder.Services.AddScoped<IStudentService, StudentService>();
 builder.Services.AddScoped<ICourseService, CourseService>();
 builder.Services.AddScoped<IProfessorService, ProfessorService>();
+builder.Services.AddScoped<IAuthService, AuthService>(); // ✅ NUEVO
 
 // CORS
 builder.Services.AddCors(options =>
@@ -92,9 +146,6 @@ try
     var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     
     appLogger.LogInformation("🔄 Configurando base de datos Railway MySQL...");
-    appLogger.LogInformation("🔗 Connection String Type: {Type}", 
-        connectionString.StartsWith("mysql://") ? "Railway MySQL URL" : 
-        connectionString.Contains("Server=") ? "MySQL Direct" : "SQLite");
     
     await context.Database.EnsureCreatedAsync();
     
@@ -104,7 +155,7 @@ try
         await context.SaveChangesAsync();
     }
     
-    appLogger.LogInformation("✅ Base de datos Railway MySQL configurada correctamente");
+    appLogger.LogInformation("✅ Base de datos configurada correctamente");
 }
 catch (Exception ex)
 {
@@ -120,7 +171,11 @@ app.UseSwaggerUI(c =>
 });
 
 app.UseCors("AllowAll");
+
+// ✅ AGREGAR MIDDLEWARE DE AUTENTICACIÓN
+app.UseAuthentication();
 app.UseAuthorization();
+
 app.MapControllers();
 
 // Health check mejorado
@@ -183,7 +238,7 @@ app.MapGet("/info", () => Results.Ok(new {
     }
 }));
 
-appLogger.LogInformation("🚀 Iniciando Student Registration API en Railway - Puerto: {Port}", port);
+appLogger.LogInformation("🚀 Iniciando Student Registration API con autenticación en Railway - Puerto: {Port}", port);
 
 app.Run();
 

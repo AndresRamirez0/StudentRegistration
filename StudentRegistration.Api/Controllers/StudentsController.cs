@@ -1,3 +1,4 @@
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using StudentRegistration.Api.Models.DTOs;
 using StudentRegistration.Api.Services;
@@ -6,6 +7,7 @@ namespace StudentRegistration.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize] // ✅ PROTEGER TODO EL CONTROLADOR
     public class StudentsController : ControllerBase
     {
         private readonly IStudentService _studentService;
@@ -19,6 +21,7 @@ namespace StudentRegistration.Api.Controllers
         /// Obtener todos los estudiantes
         /// </summary>
         [HttpGet]
+        [Authorize(Roles = "Admin,Professor")] // ✅ Solo Admin y Profesores
         public async Task<ActionResult<IEnumerable<StudentDto>>> GetAllStudents()
         {
             try
@@ -56,6 +59,7 @@ namespace StudentRegistration.Api.Controllers
         /// Crear nuevo estudiante
         /// </summary>
         [HttpPost]
+        [Authorize(Roles = "Admin")] // ✅ Solo Admin puede crear estudiantes
         public async Task<ActionResult<StudentDto>> CreateStudent(CreateStudentDto createStudentDto)
         {
             try
@@ -147,7 +151,7 @@ namespace StudentRegistration.Api.Controllers
         }
 
         /// <summary>
-        /// Obtener compa�eros de clase para un estudiante en una materia espec�fica
+        /// Obtener compañeros de clase para un estudiante en una materia específica
         /// </summary>
         [HttpGet("{studentId}/classmates/{courseId}")]
         public async Task<ActionResult<IEnumerable<ClassmateDto>>> GetClassmates(int studentId, int courseId)
@@ -164,7 +168,7 @@ namespace StudentRegistration.Api.Controllers
         }
 
         /// <summary>
-        /// Obtener todos los compa�eros de clase de un estudiante (en todas sus materias)
+        /// Obtener todos los compañeros de clase de un estudiante (en todas sus materias)
         /// </summary>
         [HttpGet("{studentId}/all-classmates")]
         public async Task<ActionResult<IEnumerable<StudentClassmatesDto>>> GetAllClassmates(int studentId)

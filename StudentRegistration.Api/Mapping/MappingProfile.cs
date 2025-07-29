@@ -20,6 +20,11 @@ namespace StudentRegistration.Api.Mapping
             // Nuevos mapeos necesarios para las pruebas
             CreateMap<CreateStudentDto, Student>();
             CreateMap<UpdateStudentDto, Student>();
+
+            // NUEVOS MAPEOS PARA AUTENTICACIÓN
+            CreateMap<User, UserDto>();
+            CreateMap<RegisterDto, User>()
+                .ForMember(dest => dest.PasswordHash, opt => opt.Ignore());
         }
     }
 }
